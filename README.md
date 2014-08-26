@@ -26,7 +26,7 @@ must access Wotan's mounted drive and do a git commit/push/pull to get it onto m
 * amold.lbl.gov:
     * /srv/scratch/carolyn/converted_serumR1, ../converted_serumR2 (contains serum mzML files)
 
-Note: The datasets I used for the R33 analysis are what Natalia put in folders labeled:
+* Note: The datasets I used for the R33 analysis are what Natalia put in folders labeled:
     * incoming/First batch 2012 (I relabled "/serumR1")
     * incoming/Second batch 2013 (I relabeled "/serumBadR2")
         * this data is bad and should probably not be used
@@ -44,24 +44,24 @@ Note: msconvert works for many conversions, but for .d, I needed the Agilent DLL
   $ cd /media/scratch/carolyn/incoming/serumR1
   $ ~/bin/msconvert Nicaserhilic1000DF5d.d -o /media/scratch/carolyn/data_mzML/serumR1
 
-# Transfer to PC with windows since Agilent DLLs only work on Windows:
+## Transfer to PC with windows since Agilent DLLs only work on Windows:
 $ cd ~/dengue_data_transfers/agilent_raw_format
 $ scp -r carolyn@wotan.lbl.gov:/media/scratch/carolyn/incoming/serumR1/Nicaserhilic1000DF5d.d ./
 
-# From windows use MSConvert (which is a ProteoWizard tool):
+## From windows use MSConvert (which is a ProteoWizard tool):
 type CMD from the search bar (from start menu).
 $ cd C:\Program Files\ProteoWizard\ProteoWizard 3.0.6337
 $ msconvert --zlib --gzip --mzML C:\Users\carolyn\Documents\dengue_temp\Nicaserhilic1000DF5d.d -o C:\Users\carolyn\Documents\dengue_temp
 [Conversion takes about 30 minutes per .d file]
 
-# Transfer from PC to Server
+## Transfer from PC to Server
 $ cd ~/dengue_dx/Dengue_data/Raw/mzML_raw
 $ scp Nicaserhilic1000DF5d.mzML.gz carolyn@wotan.lbl.gov:/media/scratch/carolyn/data_mzML/serumR1
 
-# Unzip mzML file on server
+## Unzip mzML file on server
 gunzip Nicaserhilic1000DF5d.mzML.gz
 
-# Delete files on my PC
+## Delete files on my PC
 
 
 
