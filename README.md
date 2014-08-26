@@ -14,6 +14,7 @@ Locations
     * synced to the following folders:
         * on my PC: /home/carolyn/Dengue_code (this is the E drive from Window's perspective)
         * on Amold: /srv/scratch/carolyn/dengue_mount/Dengue_code
+
 Current organization (in which I have git code on my PC and also on Amold)
 may cause confusion b/c I need to be sure to have only one working version at a time -- 
 must access Wotan's mounted drive and do a git commit/push/pull to get it onto my PC afterwards.
@@ -24,11 +25,12 @@ must access Wotan's mounted drive and do a git commit/push/pull to get it onto m
     * /srv/scratch/carolyn/dengue_project/raw_data (contains all raw .d files)
 * amold.lbl.gov:
     * /srv/scratch/carolyn/converted_serumR1, ../converted_serumR2 (contains serum mzML files)
+
 Note: The datasets I used for the R33 analysis are what Natalia put in folders labeled:
     * incoming/First batch 2012 (I relabled "/serumR1")
     * incoming/Second batch 2013 (I relabeled "/serumBadR2")
+        * this data is bad and should probably not be used
     * incoming/Third batch 2014 (I relabeled "/serumR2)
-## What Natalia called the second batch is bad and should probably not be used.
 
 ## Location of other project materials:
 * on my PC: /home/carolyn/Dengue_dx (E drive from Window's perspective)
@@ -38,7 +40,7 @@ Note: The datasets I used for the R33 analysis are what Natalia put in folders l
 Step 1: convert .d files to mzML format 
 ========================================
 
-# msconvert works for many conversions, but for .d, I needed the Agilent DLLS, which only works on Windows, so these 2 lines did not work:
+Note: msconvert works for many conversions, but for .d, I needed the Agilent DLLS, which only works on Windows, so these 2 lines did not work:
   $ cd /media/scratch/carolyn/incoming/serumR1
   $ ~/bin/msconvert Nicaserhilic1000DF5d.d -o /media/scratch/carolyn/data_mzML/serumR1
 
