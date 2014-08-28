@@ -24,7 +24,7 @@ must access Wotan's mounted drive and do a git commit/push/pull to get it onto m
 * wotan.lbl.gov: 
     * /srv/scratch/carolyn/dengue_project/raw_data (contains all raw .d files)
 * amold.lbl.gov:
-    * /srv/scratch/carolyn/converted_serumR1, ../converted_serumR2 (contains serum mzML files)
+    * /srv/scratch/carolyn/mzml_serumR1, ../converted_serumR2 (contains serum mzML files)
 
 * Note: The datasets I used for the R33 analysis are what Natalia put in folders labeled:
     * incoming/First batch 2012 (I relabled "/serumR1")
@@ -150,9 +150,3 @@ Step 2: Create features and run prediction analysis
 ## Option 2: run python code with pymzml package
 
 * process_raw_data_and_do_prediction.py
-
-
-
-
-
-
