@@ -1,4 +1,3 @@
-
 ###############################################################################
 ##################### Denge Dx Project Documentation ##########################
 ###############################################################################
@@ -12,9 +11,9 @@ Locations
 * https://bitbucket.org/cotterman/dengueDx-code
     * this one is active. As name implies, contains only code-related files
         * shortened name used with git commands: dcode
-    * synced to the following folders:
-        * on my PC: /home/carolyn/Dengue_code (this is the E drive from Window's perspective)
-        * on Amold: /srv/scratch/carolyn/dengue_mount/Dengue_code
+    * synced to the following folder:
+        * on my PC: /home/carolyn/OLD_Dengue_code_082814 (not maintained -- only for one-offs)
+        * on Amold: /srv/scratch/carolyn/Dengue_code
 
 Current organization (in which I have git code on my PC and also on Amold)
 may cause confusion b/c I need to be sure to have only one working version at a time -- 
