@@ -28,7 +28,7 @@ resultsDir = "/home/carolyn/dengue_dx/R_results/"
 
 
 #### Esablish functions to be run #### 
-source("/home/carolyn/dengue_dx/Dengue_code/clean_data_functions.R")
+source("/home/carolyn/Dengue_code/clean_data_functions.R")
 
 
 ####################################################################
@@ -107,7 +107,7 @@ sum(zerosD!=0, na.rm=TRUE) #no zeros
 #Process text files
 #Create clinical_comboD 
 clinic_varsD = read.delim(paste(inputsDir,"List of clinical variables for analysis.txt", sep=""), header=TRUE, nrows=500)
-source("/home/carolyn/dengue_dx/Dengue_code/clean_clinical_data.R") #produces clinical_comboD
+source("/home/carolyn/Dengue_code/clean_clinical_data.R") #produces clinical_comboD
 
 
 #drop observations with unknown final dengue dx

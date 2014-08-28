@@ -4,6 +4,7 @@
 #############################################################################
 
 run_predictions_wrap = function(respD, lcms_run){
+  """respD should be a dataframe -- i.e., class = data.frame"""
     
   #### Specify location to place output ####
   sink(paste(resultsDir,"prediction_output_DEN_D2_bins.txt",sep=""), append=FALSE, split=TRUE)
