@@ -12,12 +12,8 @@ Locations
     * this one is active. As name implies, contains only code-related files
         * shortened name used with git commands: dcode
     * synced to the following folder:
-        * on my PC: /home/carolyn/OLD_Dengue_code_082814 (not maintained -- only for one-offs)
+        * on my PC: /home/carolyn/temp_Dengue_code (not maintained -- only for one-offs)
         * on Amold: /srv/scratch/carolyn/Dengue_code
-
-Current organization (in which I have git code on my PC and also on Amold)
-may cause confusion b/c I need to be sure to have only one working version at a time -- 
-must access Wotan's mounted drive and do a git commit/push/pull to get it onto my PC afterwards.
 
 
 ## Location of raw data (and other large dengue data files) on server: 
@@ -33,7 +29,7 @@ must access Wotan's mounted drive and do a git commit/push/pull to get it onto m
     * incoming/Third batch 2014 (I relabeled "/serumR2)
 
 ## Location of other project materials:
-* on my PC: /home/carolyn/Dengue_dx (E drive from Window's perspective)
+* on my PC: /Dropbox/dengue_docs 
 * on Amold: /srv/scratch/carolyn
 
 
