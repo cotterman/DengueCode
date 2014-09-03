@@ -11,6 +11,9 @@ import my_cython_functions #cython code used in this script
 
 import rpy2 #allows me to call R functions from python
 import rpy2.robjects as robj
+from rpy2.robjects.numpy2ri import numpy2ri #submodules not imported automatically
+#the following import will allow me to import arbitrary R code as a package
+from rpy2.robjects.packages import SignatureTranslatedAnonymousPackage
 
 import os, sys
 
@@ -28,7 +31,7 @@ import matplotlib.pyplot as plt
 import time
 
 # limit the number of data points that we read, mostly for debugging
-MAX_NUM_RT_VALUES = None #set to None to run on all data
+MAX_NUM_RT_VALUES = 500 #set to None to run on all data
 
 VERBOSE = True
 def log_statement(statement):
@@ -41,23 +44,23 @@ def load_saved_LCMSRun(fname):
         lcms_run = pickle.load(fp)
     with open(fname + ".mat") as fp:
         mat = np.load(fp)
-    lcms_run.intensity_2D_full = mat
+    lcms_run.intensity_3D_full = mat
     return lcms_run
     
 class LCMSRun():
     'Class for mzML files (raw LCMS data)'
 
     def save(self, ofname):
-        #save the full 2D intensity array into a .mat file
-            # we're doing this b/c the pickled 2D array was huge and slow 
+        #save the full 3D intensity array into a .mat file
+            # we're doing this b/c the pickled 3D array was huge and slow 
         with open(ofname + ".mat", "w") as ofp:
-            np.save(ofp, self.intensity_2D_full)
-        intensity_2D_full = self.intensity_2D_full
-        self.intensity_2D_full = None
+            np.save(ofp, self.intensity_3D_full)
+        intensity_3D_full = self.intensity_3D_full
+        self.intensity_3D_full = None
         #dump the rest of the object into the pickle file
         with open(ofname, "w") as ofp:
             pickle.dump(self, ofp)
-        self.intensity_2D_full = intensity_2D_full
+        self.intensity_3D_full = intensity_3D_full
 
     @staticmethod
     def get_rt(ms_scan):
@@ -110,7 +113,7 @@ class LCMSRun():
         max_rt = 44.99415
         """
         # obtain an iterator over scan start times
-        lcms_run = pymzml.run.Reader(self.filename)
+        lcms_run = pymzml.run.Reader(self.filepath)
         min_rt = float(1e100)
         max_rt = 0.
         min_mz = float(1e100)
@@ -133,7 +136,7 @@ class LCMSRun():
         return (min_rt, max_rt), (min_mz, max_mz)
 
     def _find_num_data_points(self):
-        lcms_run = pymzml.run.Reader(self.filename)
+        lcms_run = pymzml.run.Reader(self.filepath)
         num = 0
         for scan_num, ms_scan in enumerate(lcms_run):
             if MAX_NUM_RT_VALUES != None and scan_num >= MAX_NUM_RT_VALUES: 
@@ -142,8 +145,8 @@ class LCMSRun():
         
         return num
     
-    def _build_2D_full_array(self):
-        """Returns 2D array of intensity values without summarization
+    def _build_3D_full_array(self):
+        """Returns 3D array of intensity values without summarization
 
             Also returns array of rt,mz,i values when at least 1 is missing
         """
@@ -157,8 +160,8 @@ class LCMSRun():
         missing_values = []
         
         # this array will have missing values where LCMS data has missings
-        log_statement("Populating array")
-        lcms_run = pymzml.run.Reader(self.filename)
+        log_statement("Populating full array")
+        lcms_run = pymzml.run.Reader(self.filepath)
         row = 0
         for ms_count, ms_scan in enumerate(lcms_run):
             # for testing a smaller data set
@@ -185,14 +188,14 @@ class LCMSRun():
 
     # Create a class constructor/initiation method 
     # (This is called when you create a new instance of this class)
-    def __init__(self, filename):
-        self.filename = filename
+    def __init__(self, filepath):
+        self.filepath = filepath
         log_statement("Finding mz and rt bounds")
         # can we speed this up by looking through the XML file?
         self.rt_bounds, self.mz_bounds = self._find_mz_rt_bounds()
-        log_statement("Building 2D array")
-        ( self.intensity_2D_full, self.missing_values 
-          ) = self._build_2D_full_array()
+        log_statement("Building 3D array")
+        ( self.intensity_3D_full, self.missing_values 
+          ) = self._build_3D_full_array()
         print "Missing values: " , self.missing_values
 
     def build_2D_binned_array(self, MAX_NUM_RT_VALUES, 
@@ -203,7 +206,7 @@ class LCMSRun():
         """
 
         # populate 2D binned array using full intensity array
-        return my_cython_functions.populate_2D_binned_array(self.intensity_2D_full, 
+        return my_cython_functions.populate_2D_binned_array(self.intensity_3D_full, 
             MAX_NUM_RT_VALUES,
             rt_start, rt_end, rt_grid_size,  
             mz_start, mz_end, mz_grid_size)
@@ -214,28 +217,28 @@ class LCMSRun():
         """
         """
         fig, ax = plt.subplots()
-        myhist_rt = plt.hist(self.intensity_2D_full[:,0])
+        myhist_rt = plt.hist(self.intensity_3D_full[:,0])
         ofname = ('hist_rt.png')
         plt.savefig(ofname)
         
         fig, ax = plt.subplots()
-        myhist_mz = plt.hist(self.intensity_2D_full[:,1])
+        myhist_mz = plt.hist(self.intensity_3D_full[:,1])
         ofname = ('hist_mz.png')
         plt.savefig(ofname)
         """
         fig, ax = plt.subplots()
         """
         #only plot for intensities greater than 200,000 (takes 7 min.)
-        high_intensities = np.zeros(self.intensity_2D_full.shape[0])
+        high_intensities = np.zeros(self.intensity_3D_full.shape[0])
         counter = 0
-        for intensity in self.intensity_2D_full[:,2]:
+        for intensity in self.intensity_3D_full[:,2]:
             if intensity > 200000:
                 high_intensities[counter] = intensity
                 counter +=1
         high_intensities.resize(counter)
         myhist_i = plt.hist(high_intensities)
         """
-        myhist_i = plt.hist(self.intensity_2D_full[:,2])
+        myhist_i = plt.hist(self.intensity_3D_full[:,2])
         ofname = ('hist_log_i.png')
         plt.savefig(ofname)
         
@@ -354,11 +357,11 @@ def plot_binned_data(intensity_2D_binned,
 
     return
 
-def load_lcms_run(filename, replace=0):
+def load_lcms_run(filepath, replace=0):
     """Create or load class lcms_run instance
 
     """
-    pickled_fname = filename + ".pickled"
+    pickled_fname = filepath + ".pickled"
     # If pickled class instance already exists, then use it
     if replace == False:
         try:
@@ -366,31 +369,20 @@ def load_lcms_run(filename, replace=0):
         except IOError:
             pass
     
-    my_run = LCMSRun(filename) 
+    my_run = LCMSRun(filepath) 
     my_run.save(pickled_fname)
     return my_run
 
 
-###############################################################################
+def fill_row_of_lcms_matrix(respD, rt_grid_size, mz_grid_size, filecount, filename):
 
-def parse_arguments():
-    """ When running from command prompt, expect filename and output directory
-
-    Ex: python /dengue_mount/Dengue_code/process_raw_data_and_do_prediction.py
-        /srv/scratch/carolyn/serumR1/Nicaserhilic1000DF5d.mzML
-        /media/scratch/carolyn/dengue_project/output/           
-    """ 
-    return os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
-
-def main():
-    filename, outdir = parse_arguments()
-    os.chdir(outdir) #change pwd to output directory
+    filepath = os.path.abspath(filename)
     start_time = time.time()
-    """
-    # Create full 2D data array and get basic stats as part of class attributes
-    my_run = load_lcms_run(filename, replace=False)
+
+    # Create full 3D data array and get basic stats as part of class attributes
+    my_run = load_lcms_run(filepath, replace=False)
     checkpt_load = time.time()
-    log_statement( "Time to build/load full 2D data array: {} minutes".format(
+    log_statement( "Time to build/load full 3D data array: {} minutes".format(
             (checkpt_load - start_time)/60. ) )  
     # takes ~14 min to build full array; ~20 sec to load
     log_statement("rt bounds: {}".format(my_run.rt_bounds)) # no () for attributes
@@ -403,62 +395,81 @@ def main():
     #    (checkpt_hist - checkpt_load)/60. ) ) #~30 seconds
    
     # Create binned data arrays with specified range and grid sizes
-        # This array will be of dimeiont rt_grid_size by mz_grid_size
+        # This array will be of dimension rt_grid_size by mz_grid_size
     log_statement("creating 2D binned array") 
-    rt_start = my_run.rt_bounds[0]
-    rt_end = my_run.rt_bounds[1]
-    rt_grid_size = 50
-    mz_start = my_run.mz_bounds[0]
-    mz_end = my_run.mz_bounds[1]
-    mz_grid_size = 50
+    rt_start = 0    #rt_start = my_run.rt_bounds[0]
+    rt_end = 45     #rt_end = my_run.rt_bounds[1]
+    mz_start = 100  #mz_start = my_run.mz_bounds[0]
+    mz_end = 1700   #mz_end = my_run.mz_bounds[1]
     intensity_2D_binned = my_run.build_2D_binned_array(MAX_NUM_RT_VALUES,
-        rt_start, rt_end, rt_grid_size,mz_start, mz_end, mz_grid_size)
+        rt_start, rt_end, rt_grid_size, mz_start, mz_end, mz_grid_size)
     checkpt_2Dbin = time.time()
     # used to take ~15 min. with pure python; now with cypython takes ~20 sec 
     log_statement( "Time to create 2D binned array: {} minutes".format(
         (checkpt_2Dbin - checkpt_hist)/60. ) ) 
-    
-    # Format 2D binned array to look like what R expects 
-        # First column should contain "code", which is IDXXXX
-        # columns must start with MZ_
-        # add indicator of LCMS_run (to help when merged with other round of LC-MS)
-            #respD["LCMS_run"] = lcms_run
-    """
-    pi = robj.r['pi']
-    print pi 
-    print pi+2
-    print pi[0]
-    print pi[0]+2
-    matrix = robjects.r['matrix'](
-
-    """
-        # Get indicator ("Study") of whether patient was in hospital or cohort study
-        if(lcms_run==1){
-            respD["Study"] = "Hospital"
-        } else {
-            respD = get_study(respD, lcms_run)
-        } 
-     
-        # Merge with clinical data (contains diagnosis as well)
-        clinical_comboD_clean = outputsDir,"clinical_comboD_clean.txt"
-
-        # Get names of all clinical variables we may use in prediction analysis
-            clinic_varsD = inputsDir, "List of clinical variables for analysis.txt", 
-                sep="", header=TRUE, nrows=500)
-
-        # Run R's prediction code (and save results)
-        resultsD2_DEN = run_predictions(clinic_varsD, "ND.vs.DEN", 
-            comboD2_filter50n, "serum, D2", reduce_in_CV=T)
-        selected_D2_MFs_DEN = resultsD2_DEN[[2]]
-        write.csv(x=resultsD2_DEN[[1]], resultsDir,"resultsD2_DEN_v6a.txt")
-    """
 
     # Plots of  binned data (mz vs. rt vs. intensity)
     #plot_binned_data(intensity_2D_binned, 
     #    rt_start, rt_end, rt_grid_size, mz_start, mz_end, mz_grid_size)
+    
+    # First column should contain "code", which is IDXXXX
+    start_pos = filename.find("Nicaserhilic")
+    IDcode = "ID" + filename[start_pos+12:start_pos+16]
+    print "ID: " , IDcode
+    respD[filecount,0] = IDcode
+    cell = 1
+    for row in xrange(rt_grid_size):
+        for col in xrange(mz_grid_size):
+            respD[filecount,cell] = intensity_2D_binned[row, col]
+            cell += 1
+    return respD
 
+###############################################################################
+
+def parse_arguments():
+    """ When running from command prompt, expect filename and output directory
+
+    Ex: python /srv/scratch/carolyn/Dengue_code/process_raw_data_and_do_prediction.py
+               /srv/scratch/carolyn/mzml_serumR1/Ni*.mzML
+               /srv/scratch/carolyn/Results/
+    """ 
+    return sys.argv[1:-1], os.path.abspath(sys.argv[-1])
+
+def main():
+    filenames, outdir = parse_arguments() #filenames will be a list
+    os.chdir(outdir) #change pwd to output directory
+    start_time_overall = time.time()
+  
+    rt_grid_size = 50
+    mz_grid_size = 50
+    log_statement( "Number of mzml patient files: {}".format(len(filenames)) )
+
+    #build empty np array to be filled with LCMS values for R prediction
+        #dimension will be (# mzml files) by (# rt/mz bins + 1 for patient ID)
+    floatD = np.zeros((len(filenames),rt_grid_size*mz_grid_size), dtype=float) #intensity vals
+    strD = np.zeros((len(filenames),1), dtype='a6') #a6 is dtype for 6 char str
+    respD = np.hstack((strD, floatD))
+
+    #fill the array
+    for filecount, filename in enumerate(filenames):
+        if filecount<10:
+            respD = fill_row_of_lcms_matrix(respD, rt_grid_size, mz_grid_size, filecount, filename)
+    print "Data for use in R: " , respD[:,0:5]
+
+    #convert numpy array into data.frame recognized by R
+    Rdf = robj.r['data.frame'](numpy2ri(respD))
+    #use this dataframe in R prediction code 
+    myRcode = """
+    doR <- function(python_respD, lcms_run) {
+        source("/srv/scratch/carolyn/Dengue_code/prediction_with_LCMS_from_python.R") 
+        run_predictions_wrap(python_respD, lcms_run)
+    }
+    """
+    Rpack = SignatureTranslatedAnonymousPackage(myRcode, "Rpack")
+    print Rpack.doR(Rdf, 1) #to run the function doR, found in Rpack
+      
     log_statement("Total execution time: {} minutes".format(
-        (time.time() - start_time)/60. ) )
+        (time.time() - start_time_overall)/60. ) )
 
 if __name__ == '__main__':
     main()

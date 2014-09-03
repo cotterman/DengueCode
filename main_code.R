@@ -1,5 +1,6 @@
 
 #Run with R 3.1.1
+#To run remotely using Rstudio, go to URL: amold.lbl.gov:8787/
 
 ################################################################################
 ############### Prepare and describe data for Dengue Dx project ################
@@ -22,13 +23,22 @@ library(glmnet) #lasso
 
 #### Establish directories ####
 
-inputsDir = "/home/carolyn/dengue_dx/Dengue_data/Processed/R_inputs/"
-outputsDir = "/home/carolyn/dengue_dx/Dengue_data/Processed/R_outputs/"
-resultsDir = "/home/carolyn/dengue_dx/R_results/"
+#directory containing code
+codeDir = "/srv/scratch/carolyn/Dengue_code/" #on Amold from Amold's perspective
+#codeDir = "/home/carolyn/temp_Dengue_code/" #on myPC
+
+#select main directory in which to find subfolders
+homeDir = "/srv/scratch/carolyn/" #on Amold from Amold's perspective
+#homeDir = "/home/carolyn/dengue_dx/" #on my PC
+
+clinical_inputsDir = paste(homeDir, "lab_and_clinical_data/Cleaned/", sep="")
+lcmsCO_inputsDir = paste(homeDir, "lcms_data_processed_in_CO/Cleaned/", sep="")
+outputsDir = paste(homeDir, "intermediate_data/", sep="")
+resultsDir = paste(homeDir, "Results/", sep="")
 
 
 #### Esablish functions to be run #### 
-source("/home/carolyn/Dengue_code/clean_data_functions.R")
+source(paste(codeDir, "clean_data_functions.R", sep=""))
 
 
 ####################################################################
@@ -86,7 +96,7 @@ table(IDs_in_resp_all$serum, IDs_in_resp_all$saliva, useNA="ifany")
 missingsD = sapply(respD1_filter50n[grep("MZ_",colnames(respD1_filter50n))], function(x) sum(is.na(x))) 
 #missingsD[which(missingsD==0)] #examine the compounds that are never missing
 fileprefix = "R1_filter50"
-png(paste("/home/carolyn/dengue_dx/R_results/",fileprefix,"_missingMZ.png", sep=""))
+png(paste(resultsDir,fileprefix,"_missingMZ.png", sep=""))
 histogram(missingsD, xlim=c(0,30), xlab="number of observations with missing values within each MZ value",
           main="LC-MS Run 1 with 50% filter")
 dev.off()
@@ -106,8 +116,8 @@ sum(zerosD!=0, na.rm=TRUE) #no zeros
 
 #Process text files
 #Create clinical_comboD 
-clinic_varsD = read.delim(paste(inputsDir,"List of clinical variables for analysis.txt", sep=""), header=TRUE, nrows=500)
-source("/home/carolyn/Dengue_code/clean_clinical_data.R") #produces clinical_comboD
+clinic_varsD = read.delim(paste(clinical_inputsDir,"List of clinical variables for analysis.txt", sep=""), header=TRUE, nrows=500)
+source(paste(codeDir, "clean_clinical_data.R", sep="")) #produces clinical_comboD
 
 
 #drop observations with unknown final dengue dx
@@ -120,9 +130,9 @@ write.csv(x=clinical_comboD_clean, file=paste(outputsDir,"clinical_comboD_clean.
 #clinical_comboD_clean = read.csv(paste(outputsDir,"clinical_comboD_clean.txt"), header=TRUE)
 #WARNING: after reading in the csv, must reconvert variables to factors
 #saving the dataframe like this will allow for future use in R without format trouble
-save(clinical_comboD_clean, file=paste(outputsDir,"clinical_comboD_clean.RData"))
+save(clinical_comboD_clean, file=paste(outputsDir,"clinical_comboD_clean.RData", sep=""))
 #now load file in future programs like this (will load dataframe object named "clinical_comboD_clean.RData")
-   #load(paste(outputsDir,"clinical_comboD_clean.RData")) 
+   #load(paste(outputsDir,"clinical_comboD_clean.RData", sep="")) 
 
 ####### Summarize lab and clinical data ####### 
 
@@ -133,7 +143,7 @@ summarize_clinical(clinical_comboD_clean)
 ################ additional investigation of abundance data ##################
 ##############################################################################
 
-#source("/home/carolyn/dengue_dx/Dengue_code/investigate_abundance_filtering.R")
+source(paste(codeDir,"investigate_abundance_filtering.R",sep=""))
 #CONCLUSION: the filtering that Natalia is doing differs from what we thought
 
 
@@ -170,7 +180,7 @@ table(comboD5_filter50n$DxFinal4cat) #cannot to DF vs DHF/DSS analysis with such
 ###############################################################################
 
 #### Esablish functions to be run #### 
-source("/home/carolyn/dengue_dx/Dengue_code/prediction_functions.R")
+source(paste(codeDir, "prediction_functions.R",sep=""))
 
 
 D1_VIM_covarF = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD1_filter50n, dim_reduce_covar=F, "D1_covarF")
@@ -206,7 +216,7 @@ sink(paste(resultsDir,"prediction_output_DEN_D3.txt",sep=""), append=FALSE, spli
 
 
 #### Esablish functions to be run #### 
-source("/home/carolyn/dengue_dx/Dengue_code/prediction_functions.R")
+source(paste(codeDir,"prediction_functions.R",sep=""))
 
 
 ### Non-invasive samples from Nicaragua -- ND vs DEN only ###

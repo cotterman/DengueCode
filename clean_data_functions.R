@@ -43,11 +43,11 @@ get_study = function(respD_only, lcms_run){
   
   # process file that contains indicator of study (cohort versus hospital)
   if(lcms_run==2){
-    study_info = read.delim(paste(inputsDir,"Study classifications_batches 3 and 4.txt", sep=""), header=TRUE, nrows=200)
+    study_info = read.delim(paste(clinical_inputsDir,"Study classifications_batches 3 and 4.txt", sep=""), header=TRUE, nrows=200)
   } else if(lcms_run==3){
-    study_info = read.delim(paste(inputsDir,"Study classifications_saliva.txt", sep=""), header=TRUE, nrows=200)
+    study_info = read.delim(paste(clinical_inputsDir,"Study classifications_saliva.txt", sep=""), header=TRUE, nrows=200)
   } else if(lcms_run==5){
-    study_info = read.delim(paste(inputsDir,"Study classifications_urine.txt", sep=""), header=TRUE, nrows=200)
+    study_info = read.delim(paste(clinical_inputsDir,"Study classifications_urine.txt", sep=""), header=TRUE, nrows=200)
   }
   newnames = as.character(c("Study","code","Res_Final2","OMS"))
   #reformat the sample ID variable so that it is "ID" followed by 4-digit character variable
@@ -74,7 +74,7 @@ clean_LCMS = function(infile, lcms_run, roundme=FALSE, decimals=2, printme=FALSE
   #decimals=2
   #roundme=FALSE
   
-  abundancesD1 = read.delim(paste(inputsDir, infile, sep=""), header=TRUE, nrows=200)
+  abundancesD1 = read.delim(paste(lcmsCO_inputsDir, infile, sep=""), header=TRUE, nrows=200)
   nColumns = dim(abundancesD1)[2] #number of columns in abundance data
   #MZ = mass to charge of the compound, it usually is approximately +1 of the mass.  
   #This value distinguishes the type of metabolite.  
@@ -168,7 +168,7 @@ graph_MZ_frequencies = function(data1, data2, dname1, dname2, fileprefix) {
   #histogram(MZ_Nums_reshaped1, xlim=c(330,380), nint=10000) #zoomed
   
   ### kernel density, overview
-  png(paste("/home/carolyn/dengue_dx/R_results/",fileprefix,"MZ_density_full.png", sep=""))
+  png(paste(resultsDir,fileprefix,"MZ_density_full.png", sep=""))
   plot(density(MZ_Nums_reshaped1, bw=.00001), xlim=c(100,1700), ylim=c(0,300),
        col="blue", xlab="", main="Kernel Density of MZ Values (full range)")
   par(new=TRUE)
@@ -179,7 +179,7 @@ graph_MZ_frequencies = function(data1, data2, dname1, dname2, fileprefix) {
   
   ### kernel density, zoomed in
   
-  png(paste("/home/carolyn/dengue_dx/R_results/",fileprefix,"MZ_density_100.png", sep=""))
+  png(paste(resultsDir,fileprefix,"MZ_density_100.png", sep=""))
   plot(density(MZ_Nums_reshaped1, bw=.000001),xlim=c(100,200), ylim=c(0,3000),
        col="blue", main="Kernel Density of MZ Values", xlab="") #kernal density
   lines(density(MZ_Nums_reshaped2, bw=.000001),xlim=c(100,200), ylim=c(0,3000),
@@ -188,7 +188,7 @@ graph_MZ_frequencies = function(data1, data2, dname1, dname2, fileprefix) {
   dev.off()
   
   plot_kdensity = function(mz_start, mz_end, ylimit, fileprefix) {
-    png(paste("/home/carolyn/dengue_dx/R_results/",fileprefix,"MZ_density_",mz_start,".png", sep=""))
+    png(paste(resultsDir,fileprefix,"MZ_density_",mz_start,".png", sep=""))
     plot(density(MZ_Nums_reshaped1, bw=.000001),xlim=c(mz_start,mz_end), ylim=c(0,ylimit),
          col="blue", main="", xlab="") #kernal density
     lines(density(MZ_Nums_reshaped2, bw=.000001),xlim=c(mz_start,mz_end), ylim=c(0,ylimit),
