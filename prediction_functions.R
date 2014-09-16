@@ -240,7 +240,7 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
       dim_reduce_num = rowMeans(as.data.frame(dim_reduce_nums))
     }
   } else {
-    MF_freqs_ordered = list() #create this empty list so there is not complaining
+    MF_freqs_ordered = list() #create this empty list so there is no complaining
   }
   
   myreport = report_performance(mydata[,c("DEN_dum","DEN_prob")])
@@ -355,11 +355,11 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
     
     
     #### Random Forests Runs ####
-    if(F==T){
+    
     outD = run_CV_and_report_bound(outD, "RF", cvars_noMiss, "non-MFs", "none",clinicCount, T)[[1]]
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "MFs", "none", MFcount, T)[[1]]
     outD = run_CV_and_report_bound(outD, "RF", c(allMFs, cvars_noMiss), "all", "none", allCount, T)[[1]]
-    
+    if(F==T){
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "MFs", "t-test", 5, F)[[1]]
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "MFs", "t-test", 4, F)[[1]]
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "MFs", "t-test", 3, F)[[1]]
@@ -379,20 +379,20 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "all", "t-test", 2, T)[[1]]
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "all", "t-test", 1, T)[[1]]
     #outD = run_CV_and_report_bound(outD, "RF", allMFs, "all", "lasso", 99, F)[[1]] #for lasso, do not use covars (might not choose any MFs)
-    }
+    
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "all", "RF", 5, T)[[1]]
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "all", "RF", 4, T)[[1]]
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "all", "RF", 3, T)[[1]]
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "all", "RF", 2, T)[[1]]
     outD = run_CV_and_report_bound(outD, "RF", allMFs, "all", "RF", 1, T)[[1]]
-    
+    }
     
     #### Super Learner Runs ####
-    if(F==T){
+    
     outD = run_CV_and_report_bound(outD, "SL", cvars_noMiss, "non-MFs", "none",clinicCount, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "MFs", "none", MFcount, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", c(allMFs, cvars_noMiss), "all", "none", allCount, T)[[1]]
-    
+    if(F==T){
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "MFs", "t-test", 5, F)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "MFs", "t-test", 4, F)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "MFs", "t-test", 3, F)[[1]]
@@ -412,14 +412,13 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "t-test", 2, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "t-test", 1, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "lasso", 99, F)[[1]]
-    
+    }
     #outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 5, F)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 5, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 4, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 3, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 2, T)[[1]]
-    }
-    outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 1, T)[[1]]
+    #outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 1, T)[[1]]
     
     ## Obtain results for SL run with MFs selected by Rashika and Natalia
     #outD = run_CV_and_report_bound(outD, "SL", selectMFs, "MFs", "none", selectCountMF,T)[[1]]

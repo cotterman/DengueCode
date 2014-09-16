@@ -20,7 +20,7 @@ clinic_varsC_char = sapply(clinic_varsC, as.character)
 ####### Data from the hospital study ########
 # This should contain data from the first batch and from some of the 3rd/4th batches
 
-clinical_hospitD = read.delim(paste(inputsDir,"Clinical data_hospital study.txt", sep=""), header=TRUE, nrows=2000)
+clinical_hospitD = read.delim(paste(clinical_inputsDir,"Clinical data_hospital study.txt", sep=""), header=TRUE, nrows=2000)
 
 #reformat the sample ID variable so that it is "ID" followed by 4-digit character variable
 fcode = function(x) sprintf("ID%04d",as.numeric(as.character(x["code"])))
@@ -101,8 +101,8 @@ clinical_hospitD_clean = clinical_hospitD[,namesH_nonLCMS]
 
 ####### Data for cohort samples ########
 
-#basic_cohortD = read.delim(paste(inputsDir,"Basic info_cohort study.txt", sep=""), header=TRUE, nrows=100) #old
-basic_cohortD = read.delim(paste(inputsDir,"Lab_cohort_noninvasive samples.txt", sep=""), header=TRUE, nrows=100) #new (more comprehensive)
+#basic_cohortD = read.delim(paste(clinical_inputsDir,"Basic info_cohort study.txt", sep=""), header=TRUE, nrows=100) #old
+basic_cohortD = read.delim(paste(clinical_inputsDir,"Lab_cohort_noninvasive samples.txt", sep=""), header=TRUE, nrows=100) #new (more comprehensive)
 
 #reformat the sample ID variable so that it is "ID" followed by 4-digit character variable
 #need to take the characters up till the first dot, and then reformat
@@ -115,8 +115,8 @@ basic_cohortD["Study"] = "Cohort"
 
 
 ## add clinical/lab info
-#clinic_cohortD = read.delim(paste(inputsDir,"Clinical data_cohort study.txt", sep=""), header=TRUE, nrows=100) #old
-clinic_cohortD = read.delim(paste(inputsDir,"Clinical_cohort_noninvasive samples.txt", sep=""), header=TRUE, nrows=100) #new (more comprehensive)
+#clinic_cohortD = read.delim(paste(clinical_inputsDir,"Clinical data_cohort study.txt", sep=""), header=TRUE, nrows=100) #old
+clinic_cohortD = read.delim(paste(clinical_inputsDir,"Clinical_cohort_noninvasive samples.txt", sep=""), header=TRUE, nrows=100) #new (more comprehensive)
 
 newIDs_4 = apply(X=clinic_cohortD, MARGIN = 1, FUN=formatID)
 clinic_cohortD["code"] = newIDs_4
