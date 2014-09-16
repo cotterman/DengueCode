@@ -31,7 +31,7 @@ import matplotlib.pyplot as plt
 import time
 
 # limit the number of data points that we read, mostly for debugging
-MAX_NUM_RT_VALUES = 500 #set to None to run on all data
+MAX_NUM_RT_VALUES =  None #set to None to run on all data
 
 VERBOSE = True
 def log_statement(statement):
@@ -196,9 +196,9 @@ class LCMSRun():
         log_statement("Building 3D array")
         ( self.intensity_3D_full, self.missing_values 
           ) = self._build_3D_full_array()
-        print "Missing values: " , self.missing_values
+        #print "Missing values: " , self.missing_values
 
-    def build_2D_binned_array(self, MAX_NUM_RT_VALUES, 
+    def build_2D_binned_array(self, My_NUM_RT_VALUES, 
             rt_start, rt_end, rt_grid_size, 
             mz_start, mz_end, mz_grid_size):
         """Returns 2d array of intensity values based on specified grid
@@ -207,7 +207,7 @@ class LCMSRun():
 
         # populate 2D binned array using full intensity array
         return my_cython_functions.populate_2D_binned_array(self.intensity_3D_full, 
-            MAX_NUM_RT_VALUES,
+            My_NUM_RT_VALUES,
             rt_start, rt_end, rt_grid_size,  
             mz_start, mz_end, mz_grid_size)
 
@@ -378,13 +378,16 @@ def fill_row_of_lcms_matrix(respD, rt_grid_size, mz_grid_size, filecount, filena
 
     filepath = os.path.abspath(filename)
     start_time = time.time()
+    start_pos = filename.find("Nicaserhilic")
+    IDcode = "ID" + filename[start_pos+12:start_pos+16]
+    print "\n ID: " , IDcode
 
     # Create full 3D data array and get basic stats as part of class attributes
     my_run = load_lcms_run(filepath, replace=False)
     checkpt_load = time.time()
     log_statement( "Time to build/load full 3D data array: {} minutes".format(
             (checkpt_load - start_time)/60. ) )  
-    # takes ~14 min to build full array; ~20 sec to load
+    # takes 20 min to build full array; ~20 sec to load
     log_statement("rt bounds: {}".format(my_run.rt_bounds)) # no () for attributes
     log_statement("mz bounds: {}".format(my_run.mz_bounds))
     
@@ -396,12 +399,11 @@ def fill_row_of_lcms_matrix(respD, rt_grid_size, mz_grid_size, filecount, filena
    
     # Create binned data arrays with specified range and grid sizes
         # This array will be of dimension rt_grid_size by mz_grid_size
-    log_statement("creating 2D binned array") 
     rt_start = 0    #rt_start = my_run.rt_bounds[0]
     rt_end = 45     #rt_end = my_run.rt_bounds[1]
     mz_start = 100  #mz_start = my_run.mz_bounds[0]
     mz_end = 1700   #mz_end = my_run.mz_bounds[1]
-    intensity_2D_binned = my_run.build_2D_binned_array(MAX_NUM_RT_VALUES,
+    intensity_2D_binned = my_run.build_2D_binned_array(None,
         rt_start, rt_end, rt_grid_size, mz_start, mz_end, mz_grid_size)
     checkpt_2Dbin = time.time()
     # used to take ~15 min. with pure python; now with cypython takes ~20 sec 
@@ -413,9 +415,6 @@ def fill_row_of_lcms_matrix(respD, rt_grid_size, mz_grid_size, filecount, filena
     #    rt_start, rt_end, rt_grid_size, mz_start, mz_end, mz_grid_size)
     
     # First column should contain "code", which is IDXXXX
-    start_pos = filename.find("Nicaserhilic")
-    IDcode = "ID" + filename[start_pos+12:start_pos+16]
-    print "ID: " , IDcode
     respD[filecount,0] = IDcode
     cell = 1
     for row in xrange(rt_grid_size):
@@ -446,15 +445,19 @@ def main():
 
     #build empty np array to be filled with LCMS values for R prediction
         #dimension will be (# mzml files) by (# rt/mz bins + 1 for patient ID)
-    floatD = np.zeros((len(filenames),rt_grid_size*mz_grid_size), dtype=float) #intensity vals
+    floatD = np.zeros((len(filenames),rt_grid_size*mz_grid_size), dtype=float) #i vals
     strD = np.zeros((len(filenames),1), dtype='a6') #a6 is dtype for 6 char str
     respD = np.hstack((strD, floatD))
 
     #fill the array
     for filecount, filename in enumerate(filenames):
-        if filecount<10:
-            respD = fill_row_of_lcms_matrix(respD, rt_grid_size, mz_grid_size, filecount, filename)
-    print "Data for use in R: " , respD[:,0:5]
+        if filecount<1000:
+            respD = fill_row_of_lcms_matrix(respD, 
+                    rt_grid_size, mz_grid_size, filecount, filename)
+    print "\n Data to use in R: " , respD[0:5,0:20]
+
+    log_statement("Time till beginning of R section: {} minutes".format(
+    (time.time() - start_time_overall)/60. ) )
 
     #convert numpy array into data.frame recognized by R
     Rdf = robj.r['data.frame'](numpy2ri(respD))
@@ -467,7 +470,7 @@ def main():
     """
     Rpack = SignatureTranslatedAnonymousPackage(myRcode, "Rpack")
     print Rpack.doR(Rdf, 1) #to run the function doR, found in Rpack
-      
+
     log_statement("Total execution time: {} minutes".format(
         (time.time() - start_time_overall)/60. ) )
 

@@ -3,7 +3,7 @@
 ## wrapper for using LCMS data processed in Python in prediction function  ##
 #############################################################################
 
-run_predictions_wrap = function(respD, lcms_run){
+run_predictions_wrap = function(respD, lcms_run, load_from_R){
   
   print("Running R code using data matrix created in Python")
   
@@ -31,11 +31,12 @@ run_predictions_wrap = function(respD, lcms_run){
   outputsDir = paste(homeDir, "intermediate_data/", sep="")
   resultsDir = paste(homeDir, "Results/", sep="")
   
-  save(respD, file=paste(outputsDir,"df_from_python.RData", sep=""))
+  #save(respD, file=paste(outputsDir,"df_from_python.RData", sep=""))
   load(paste(outputsDir,"df_from_python.RData", sep="")) #will load respD into R
+
       
   #### Specify location to place output ####
-  sink(paste(resultsDir,"prediction_output_test.txt", sep=""), append=FALSE, split=TRUE)
+  sink(paste(resultsDir,"prediction_output_test2.txt", sep=""), append=FALSE, split=TRUE)
   
   #### Esablish functions to be run #### 
   source(paste(codeDir, "clean_data_functions.R", sep=""))
@@ -48,25 +49,39 @@ run_predictions_wrap = function(respD, lcms_run){
   MZ_Names = sapply(X=colnames(respD), replace_X_with_MZ )
   newnames = as.character(c("code", MZ_Names[-c(length(MZ_Names))]))
   colnames(respD) = newnames #rename columns
+  
+  #convert intensity values from factors to numeric (not sure why they are ever factors...)
+  Iindices = grep("MZ_",colnames(respD)) #column indices in dataset
+  intensity_vars = colnames(respD[Iindices]) #names
+  #convert these variables to numerics
+  respD = convert_factor_to_numeric(respD, intensity_vars)
 
   #### add an indicator for type of study (will need this later when we merge) ####
   if(lcms_run==1){
+    print("LCMS data batch 1")
     respD["Study"] = "Hospital"
   } else {
     respD = get_study(respD, lcms_run)
   } 
-
+  
+  
   #### load other objects needed for prediction function (created by main_code.R) ####
   clinic_varsD = read.delim(paste(clinical_inputsDir,"List of clinical variables for analysis.txt", sep=""), header=TRUE, nrows=500)
   load(paste(outputsDir,"clinical_comboD_clean.RData", sep="")) 
   
   #### merge LCMS data with clinical data ####
-  comboD2_filter50n <- merge(clinical_comboD_clean, respD, by=c("code","Study"), all=F) #75 obs
+  comboD1_filter50n <- merge(clinical_comboD_clean, respD, by=c("code","Study"), all=F) #75 obs
+  save(comboD1_filter50n, file=paste(outputsDir,"df_from_python_withRdata.RData", sep=""))
+  #load(paste(outputsDir,"df_from_python_withRdata.RData", sep="")) #will load comboD1_filter50n into R
+  
+  #make sure variable types are as expected
+  print("Variable types right before run_predictions function")
+  print( sapply(comboD1_filter50n[, 1:65] , class) )
   
   #run prediction algorithms and save results
-  resultsD2_DEN = run_predictions(clinic_varsD, "ND.vs.DEN", comboD2_filter50n, "serum, D2", reduce_in_CV=T)
+  resultsD1_DEN = run_predictions(clinic_varsD, "ND.vs.DEN", comboD1_filter50n, "serum, D1", reduce_in_CV=T)
   #selected_D1_MFs_DEN = resultsD1_DEN[[2]]
-  resultsD2_DEN[[1]]
-  write.csv(x=resultsD2_DEN[[1]], file=paste(resultsDir,"resultsD2_DEN_bins.txt", sep=""), row.names = FALSE)
+  resultsD1_DEN[[1]]
+  write.csv(x=resultsD1_DEN[[1]], file=paste(resultsDir,"resultsD1_DEN_bins.txt", sep=""), row.names = FALSE)
   
 }

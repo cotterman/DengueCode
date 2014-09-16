@@ -70,8 +70,8 @@ graph_MZ_frequencies(respD1_filter10n, respD2_filter10n, "Round1_filter10", "Rou
 ####### Combine the abundance data (runs 1 and 2) ########
 
 #list the columns that are in common between serum runs 1 and 2
-commonvars = intersect(colnames(respD2_filter10n),colnames(respD1_filter10n)) #only 40 compound identifiers in common (10% data)
-resp_comboD = rbind(respD1_filter10n[,commonvars], respD2_filter10n[,commonvars])
+commonvars = intersect(colnames(respD2_filter50n),colnames(respD1_filter50n)) #only 40 compound identifiers in common (10% data)
+resp_comboD = rbind(respD1_filter50n[,commonvars], respD2_filter50n[,commonvars])
 
 #just get list of ID codes (so I can limit clinical data to patients for whom we have LC-MS data)
 IDs_in_resp_D1_D2 = resp_comboD[,c("code","Study","LCMS_run")]
