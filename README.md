@@ -133,13 +133,15 @@ Step 2: Create features and run prediction analysis
    * monotonic?  yes (I'm taking a guess on this, but I really don't know)
 * Feature alignment across runs:
    * m/z tolerance of 0.05 Da
+   * weight for mz of 100
    * retention time tolerance of 1.5 min.
+   * weight for RT of 2
 * Gap filling for missing value imputation: chose the "peak finding" method so that RT shifts can be accomodated
    * intensity tolerance: 20%
    * mz tolerance: .05 mz/ 5ppm
    * RT tolerance: .5 min
    * RT correction: yes
-* Normalization
+* Normalization: "linear normalization" using "total raw signal" with "peak area"
 * Export peak list to csv for prediction analysis (to run in R)
 
 
