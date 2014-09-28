@@ -94,57 +94,6 @@ Step 2: Create features and run prediction analysis
     * This file will contain a <row> element for each peak
     * Each of these rows contains information on its individual peaks
 
-### Details on MZmine2 data processing options
-
-* scan-by-scan filtering (not necessary for high resolution data)
-   * Choose mean filter with m/z bin size no less than .01
-* **Baseline correction (not necessary for high resolution data)
-   * chromatogram type: base peak intensity
-   * smoothing factor: 1E6 (choose number in range of 10^5 to 10^8)
-   * asymmetry: 0.001
-   * m/z bin width: 1 (bin width of .1 versus 1 did not seem to make difference)
-* **Mass detection (aka spectral filtering)
-   * may want to use the centroid method since MZmine says data is already centroided
-	* noise level = 100
-   * assuming non-centroided data, wavelet transform looks good with following parameters:
-	* noise level = 100
-	* scale level = 10
-	* window size (%) = 100
-* **Chromatogram building (combine scans within each LCMS run):  
-   Parameter values:
-      * min time span (width) of peaks = .05 min (note: scans occur every .01 min)
-      * min intensity of highest datapoint in peak = 500
-      * mz tolerance (max diff btn mz values to be considered the same) = .01 (5ppm)
-	* note: for a given scan, we have already choosen the centers of the peaks 
- 	  to represent the mz value of that peak.  thus, we need to set mz tolerance
-	  to the common spread of a peak, but rather the degree to which the center changes 
-        *(I should verify that this is indeed true)
-	* peaks appeared better looking when I used .01 as compared to higher values
-* Chromatogram deconvolution: 
-   * wavelets (XCMS) with the following parameters:
-       * Signal/noise minimum threshold: 5
-       * wavelet scales: .1 - 8 (a low min. value means narrow waves are not allowed)
-       * peak duration range: .1 - 5 (I think this is similar to wavelet scales)
-       * peak integration method: use smoothed data
-* Deisotoping (parameter values inspired by a paper I came across): 
-   * maximum charge of 6
-   * retention time tolerance of 3 s
-   * m/z tolerance of 0.03 Da
-   * monotonic?  yes (I'm taking a guess on this, but I really don't know)
-* Feature alignment across runs:
-   * m/z tolerance of 0.05 Da
-   * weight for mz of 100
-   * retention time tolerance of 1.5 min.
-   * weight for RT of 2
-* Gap filling for missing value imputation: chose the "peak finding" method so that RT shifts can be accomodated
-   * intensity tolerance: 20%
-   * mz tolerance: .05 mz/ 5ppm
-   * RT tolerance: .5 min
-   * RT correction: yes
-* Normalization: "linear normalization" using "total raw signal" with "peak area"
-* Export peak list to csv for prediction analysis (to run in R)
-
-
 ## Option 2: run python code with pymzml package
 
 * process_raw_data_and_do_prediction.py
