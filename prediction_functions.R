@@ -86,6 +86,7 @@ report_performance = function(pdata) {
   report$ROC_area = round(myauc(x=(1-performance$specificity), y=performance$sensitivity),3)
   #calculate mean squared error (using actual outcome and predicted probability)
   report$MSE = round(mean( (as.vector(pdata$DEN_prob) - as.numeric(as.character(pdata$DEN_dum)))^2 ),3)
+  report$SD_SqEr = round(sd( (as.vector(pdata$DEN_prob) - as.numeric(as.character(pdata$DEN_dum)))^2 ),3)
   return(report)
 }
 
@@ -108,7 +109,7 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
     #reduce_in_CV: T if dimension reduction should be done in CV step.  F is dim reduc should be done before CV step.
     #cVars: clinical variables for consideration (=cvars_noMiss by default)
     #LCMS_vars: MFs for consideration (=allMFs by default)
-  
+  V = 10 #number of folds to use in CV
   cat(paste("\n\n**** running for", predictor_cats, dim_reduce_method, dim_reduce_num, pred_method,"****\n\n"))
   
   #this list will contain variables selected in the subsetting process
@@ -122,10 +123,15 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
   partition_nobs <- ceiling(0.1 * nobs) #size of each peice
   nvec = rep(seq(from=1, to=10),partition_nobs)[1:nobs] #vector of values 1 - 10 of length nobs with [approximately] equal numbers of each value
   rvec = permute(nvec) #random permutation of vector
-  for(i in seq(from=1, to=10)) {
+  
+  
+  ### cross-validation step: fit model and predict for left out fold ###
+  for(i in seq(from=1, to=V)) {
+
     trainD = mydata[which(rvec!=i),] #training set for first run 
     testD = mydata[which(rvec==i),]  #test set for first run
     
+    ### determine which variables to include in model ###
     if(reduce_in_CV==T & dim_reduce_method!="none"){
       if(dim_reduce_method=="RF"){
         if(dim_reduce_covar==F){
@@ -169,6 +175,7 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
     myformula = as.formula(paste("DEN_dum ~ ", paste(predictors, collapse= "+")))
     #print(myformula)
     
+    ### fit prediction algorithm to training set and predict on test set ###
     if(pred_method=="logit"){
       mylogit <- glm(myformula, data = trainD, family = "binomial")
       #print(summary(mylogit))
@@ -204,12 +211,12 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
         mySL.library = c("SL.mean", "SL.knn", "SL.randomForest")
       }
       #print(colnames(as.data.frame(trainD_num[,c(predictors)])))
-      #print(colnames(as.data.frame(testD_num[,c(predictors)])))
+      #print(colnames(as.data.frame(testD_umn[,c(predictors)])))
       #print(mySL.library)
       SLresults = SuperLearner(Y=trainD_num[, "DEN_dum"], 
                                X=as.data.frame(trainD_num[,c(predictors)]), newX=as.data.frame(testD_num[,c(predictors)]),
                                family=binomial(), SL.library=mySL.library,
-                               method = "method.NNLS", verbose=FALSE)
+                               method = "method.NNloglik", verbose=FALSE) #9-28-14: changed method from NNLS to NNloglik (Alan's suggestion)
       mydata[which(rvec==i),"DEN_prob"] = SLresults$SL.predict #predicts for obs in newX, as we want
       if(i==1){
         SLcoefs = as.data.frame(t(c(i,SLresults$coef)))
@@ -221,7 +228,8 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
       }
     }
     
-  }
+  } #end of CV step 
+  
   #present coefficients for algorithms chosen by Super Learner
   if(pred_method=="SL"){
     print("Coefficients for algorithms chosen by Super Learner (for each CV loop)")
@@ -243,13 +251,17 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
     MF_freqs_ordered = list() #create this empty list so there is no complaining
   }
   
+  cvAUCreport <- ci.cvAUC(predictions=mydata$DEN_prob, labels=mydata$DEN_dum, folds=rvec, confidence=0.95)
+  print(cvAUCreport)
   myreport = report_performance(mydata[,c("DEN_dum","DEN_prob")])
   print(myreport)
   output = list(predictor_cats, dim_reduce_covar, dim_reduce_method, dim_reduce_num, pred_method, 
-                myreport$sensitivity, myreport$specificity, myreport$pred_err, myreport$ROC_area, myreport$MSE)
+                myreport$sensitivity, myreport$specificity, myreport$pred_err, 
+                myreport$ROC_area, myreport$MSE, myreport$SD_SqEr, 
+                cvAUCreport$cvAUC, cvAUCreport$se, cvAUCreport$ci[[1]], cvAUCreport$ci[[2]], cvAUCreport$confidence)
   outD = rbind(outD, output)
   #return(outD)
-  return(list(outD, MF_freqs_ordered)) #temporarily
+  return(list(outD, MF_freqs_ordered)) 
 }
 
 #merge lists of selected MFs
@@ -286,7 +298,7 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
   if(outcome=="ND.vs.DEN"){
     #obtain list of candidate clinical variables to include in ND vs. DEN prediction
     clinic_vars = c(as.character(clinic_varsD[which(clinic_varsD$Use.in.ND.vs.DEN.prediction==1),
-                                              "Variable.Name.in.Hospital.data"]),"age","DaysSick") #43
+                                              "Variable.Name.in.Hospital.data"]),"age","DaysSick") #43+2
   }
   if(outcome=="DF.vs.DHF.DSS"){
     #obtain list of candidate clinical variables to include in DF vs. DHF/DSS prediction
@@ -315,10 +327,12 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
   
   #initialize dataframe to hold results
   outD=data.frame(a=character(0), f=logical(0), b=character(0), c=integer(0), d=character(0),
-                  x=integer(0), y=integer(0), z=integer(0), q=integer(0), p=integer(0), stringsAsFactors = FALSE)
+                  x=integer(0), y=integer(0), z=integer(0), q=integer(0), p=integer(0), 
+                  e=integer(0), f=integer(0), g=integer(0), h=integer(0), k=integer(0), stringsAsFactors = FALSE)
   colnames(outD) = c("predictors", "dim_reduce_covar", "reduce_method", "r_num", "pred_method", 
-                     "sensitivity", "specificity", "pred_err","ROC_area","MSE")
-  blanks = list(NA,NA,NA,NA,NA,NA,NA,NA,NA) 
+                     "sensitivity", "specificity", "pred_err","ROC_area","MSE", 
+                     "cvAUC","cvAUC_se", "cvAUC_ci_lower","cvAUC_ci_upper", "cvAUC_confidence")
+  blanks = list(NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA) 
   outD[1,] = blanks #seems ridiculous, but adding this blank row is only way I could get it working
   #this will hold info on which MFs were selected, if such an analysis is desired
   selected_MFs = "NA"
@@ -352,7 +366,6 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
   
   
   if(reduce_in_CV==T){
-    
     
     #### Random Forests Runs ####
     
@@ -390,9 +403,10 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
     #### Super Learner Runs ####
     
     outD = run_CV_and_report_bound(outD, "SL", cvars_noMiss, "non-MFs", "none",clinicCount, T)[[1]]
+    if(F==T){
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "MFs", "none", MFcount, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", c(allMFs, cvars_noMiss), "all", "none", allCount, T)[[1]]
-    if(F==T){
+    
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "MFs", "t-test", 5, F)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "MFs", "t-test", 4, F)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "MFs", "t-test", 3, F)[[1]]
@@ -412,14 +426,14 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "t-test", 2, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "t-test", 1, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "lasso", 99, F)[[1]]
-    }
+    
     #outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 5, F)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 5, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 4, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 3, T)[[1]]
     outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 2, T)[[1]]
-    #outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 1, T)[[1]]
-    
+    outD = run_CV_and_report_bound(outD, "SL", allMFs, "all", "RF", 1, T)[[1]]
+    }
     ## Obtain results for SL run with MFs selected by Rashika and Natalia
     #outD = run_CV_and_report_bound(outD, "SL", selectMFs, "MFs", "none", selectCountMF,T)[[1]]
     #outD = run_CV_and_report_bound(outD, "SL", c(selectMFs, cvars_noMiss), "all", "none",selectCountAll,T)[[1]]
@@ -554,9 +568,10 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
     
   }
 
-  main_out = outD[2:dim(outD)[1],] #drop the first row (it's blank)
+  main_out = outD[-1,] #drop the first row (it's blank)
+  #main_out = outD
   #return(main_out) 
-  return(list(main_out,selected_MFs)) #temporarily
+  return(list(main_out,selected_MFs)) 
 }
 
 
