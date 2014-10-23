@@ -7,20 +7,18 @@ get_dupIDs = function(vec, vec_name){
   if(dim(v1dups)>1){
     print(paste("Counts of duplicates in", vec_name))
     print(v1dups)
-    print(paste("Duplicated IDs in", vec_name))
+    print(paste("Duplicated values in", vec_name))
     print(t1[which(t1>1)])
   }else{
-    print("No duplicated values")
+    print(paste("No duplicated values in", vec_name))
   }
 }
 
-### function to give us the ID of observations which are not found in both datasets
-    # also checks ID duplicates in each dataset
+### function to give us the values which are not found in both vectors
+    # also checks for duplicate values in each dataset
 get_mismatches = function(v1, v2, v1_name, v2_name){
-  #v1 = respD[,"code"]
-  #v1_name = "LCMS"
-  #v2 = study_info[,"code"]
-  #v2_name = "study info"
+  #v1 and v2 should be vectors --- ex: respD[,"code"]
+  #v1_name should be a string describing v1 --- ex: "LCMS"
   
   get_dupIDs(v1, v1_name)
   get_dupIDs(v2, v2_name)
@@ -31,15 +29,19 @@ get_mismatches = function(v1, v2, v1_name, v2_name){
   if(length(v1_not_v2)>0){
     print(paste(v1_name,"values not found in",v2_name))
     print(v1_not_v2)
+  }else{
+    print(paste("All values in",v1_name,"are also in",v2_name))
   }
   if(length(v2_not_v1)>0){
     print(paste(v2_name,"values not found in",v1_name))
     print(v2_not_v1)
+  }else{
+    print(paste("All values in",v2_name,"are also in",v1_name))
   }
 }
 
 ### function to read in the file indicating which study each sample belongs to ###
-get_study = function(respD_only, lcms_run){
+get_study = function(respD_only, lcms_run, clinical_inputsDir){
   
   # process file that contains indicator of study (cohort versus hospital)
   if(lcms_run==2){
@@ -119,7 +121,7 @@ clean_LCMS = function(infile, lcms_run, roundme=FALSE, decimals=2, printme=FALSE
   if(lcms_run==1){
     respD["Study"] = "Hospital"
   } else {
-    respD = get_study(respD, lcms_run)
+    respD = get_study(respD, lcms_run, clinical_inputsDir)
   } 
   
   #count  the number of duplicated MZ values
@@ -153,62 +155,23 @@ get_MZ_vals = function(mydata){
   return(MZ_Nums_reshaped)
 }
 
-
-
-### function takes abundance data as input and produces histograms of MZ values
-graph_MZ_frequencies = function(data1, data2, dname1, dname2, fileprefix) {
-  
-  MZ_Nums_reshaped1 = get_MZ_vals(data1)
-  MZ_Nums_reshaped2 = get_MZ_vals(data2)
-  
-  
-  #mybreaks = seq(min(MZ_Nums_reshaped1),max(MZ_Nums_reshaped1),10)
-  #histogram(MZ_Nums_reshaped1, nint=100) #overview
-  #histogram(MZ_Nums_reshaped1, xlim=c(300,400), nint=10000) #zoomed
-  #histogram(MZ_Nums_reshaped1, xlim=c(330,380), nint=10000) #zoomed
-  
-  ### kernel density, overview
-  png(paste(resultsDir,fileprefix,"MZ_density_full.png", sep=""))
-  plot(density(MZ_Nums_reshaped1, bw=.00001), xlim=c(100,1700), ylim=c(0,300),
-       col="blue", xlab="", main="Kernel Density of MZ Values (full range)")
-  par(new=TRUE)
-  plot(density(MZ_Nums_reshaped2, bw=.00001), xlim=c(100,1700), ylim=c(0,300),
-       col="red", xlab="", main="") 
-  legend("topright",legend=c(dname1, dname2), col=c("blue","red"),lty=1)
-  dev.off()
-  
-  ### kernel density, zoomed in
-  
-  png(paste(resultsDir,fileprefix,"MZ_density_100.png", sep=""))
-  plot(density(MZ_Nums_reshaped1, bw=.000001),xlim=c(100,200), ylim=c(0,3000),
-       col="blue", main="Kernel Density of MZ Values", xlab="") #kernal density
-  lines(density(MZ_Nums_reshaped2, bw=.000001),xlim=c(100,200), ylim=c(0,3000),
-        col="red", main="", xlab="") #kernal density
-  legend("topleft",legend=c(dname1, dname2), col=c("blue","red"),lty=1)
-  dev.off()
-  
-  plot_kdensity = function(mz_start, mz_end, ylimit, fileprefix) {
-    png(paste(resultsDir,fileprefix,"MZ_density_",mz_start,".png", sep=""))
-    plot(density(MZ_Nums_reshaped1, bw=.000001),xlim=c(mz_start,mz_end), ylim=c(0,ylimit),
-         col="blue", main="", xlab="") #kernal density
-    lines(density(MZ_Nums_reshaped2, bw=.000001),xlim=c(mz_start,mz_end), ylim=c(0,ylimit),
-          col="red", main="", xlab="") #kernal density
-    dev.off()
-  }
-  plot_kdensity(mz_start=200, mz_end=300, ylimit=3000, fileprefix)
-  plot_kdensity(mz_start=300, mz_end=400, ylimit=3000, fileprefix)
-  plot_kdensity(mz_start=400, mz_end=500, ylimit=3000, fileprefix)
-  plot_kdensity(mz_start=500, mz_end=600, ylimit=3000, fileprefix)
-  plot_kdensity(mz_start=600, mz_end=700, ylimit=3000, fileprefix)
-  plot_kdensity(mz_start=700, mz_end=800, ylimit=3000, fileprefix)
-  plot_kdensity(mz_start=800, mz_end=900, ylimit=3000, fileprefix)
-  plot_kdensity(mz_start=900, mz_end=1000, ylimit=3000, fileprefix)
-  plot_kdensity(mz_start=1000, mz_end=1100, ylimit=1000, fileprefix)
-  plot_kdensity(mz_start=1100, mz_end=1200, ylimit=1000, fileprefix)
-  plot_kdensity(mz_start=1200, mz_end=1300, ylimit=1000, fileprefix)
-  plot_kdensity(mz_start=1300, mz_end=1400, ylimit=1000, fileprefix)
-  plot_kdensity(mz_start=1400, mz_end=1500, ylimit=1000, fileprefix)
-  
+### function get list of patient IDs that are present in specified data
+get_IDs_in_common = function(resp_D1D2, respD3_filter50n, respD5_filter50n){
+  IDs_in_resp_D1_D2 = resp_D1D2[,c("code","Study","LCMS_run")]
+  temp = merge(IDs_in_resp_D1_D2[,c("code","Study","LCMS_run")], 
+               respD3_filter50n[,c("code","Study","LCMS_run")], by=c("code","Study"), all=T)
+  temp$serum = temp$LCMS_run.x
+  temp$LCMS_run.x = NULL
+  temp$saliva = temp$LCMS_run.y
+  temp$LCMS_run.y = NULL
+  IDs_in_resp_all = merge(temp, respD5_filter50n[,c("code","Study","LCMS_run")], by=c("code","Study"), all=T)
+  IDs_in_resp_all$urine = IDs_in_resp_all$LCMS_run
+  IDs_in_resp_all$LCMS_run = NULL
+  #are all saliva and urine samples are from same people? yes
+  table(IDs_in_resp_all$urine, IDs_in_resp_all$saliva, useNA="ifany")
+  #are all saliva and serum samples from the same people? just 1 (might be mistake -- ID1408 in cohort, which was already problematic)
+  table(IDs_in_resp_all$serum, IDs_in_resp_all$saliva, useNA="ifany")
+  return(IDs_in_resp_all)
 }
 
 ### Basic summary of clinical and lab variables ###

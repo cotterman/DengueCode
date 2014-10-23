@@ -429,7 +429,7 @@ def parse_arguments():
     """ When running from command prompt, expect filename and output directory
 
     Ex: python /srv/scratch/carolyn/Dengue_code/process_raw_data_and_do_prediction.py
-               /srv/scratch/carolyn/mzml_serumR1/Ni*.mzML
+               /srv/scratch/carolyn/mzml_serumR2/3Ni*.mzML
                /srv/scratch/carolyn/Results/
     """ 
     return sys.argv[1:-1], os.path.abspath(sys.argv[-1])
@@ -442,7 +442,7 @@ def main():
     rt_grid_size = 50
     mz_grid_size = 50
     log_statement( "Number of mzml patient files: {}".format(len(filenames)) )
-
+    
     #build empty np array to be filled with LCMS values for R prediction
         #dimension will be (# mzml files) by (# rt/mz bins + 1 for patient ID)
     floatD = np.zeros((len(filenames),rt_grid_size*mz_grid_size), dtype=float) #i vals
@@ -469,10 +469,10 @@ def main():
     }
     """
     Rpack = SignatureTranslatedAnonymousPackage(myRcode, "Rpack")
-    print Rpack.doR(Rdf, 1) #to run the function doR, found in Rpack
-
+    print Rpack.doR(Rdf, lcms_run=2) #to run the function doR, found in Rpack
+    
     log_statement("Total execution time: {} minutes".format(
-        (time.time() - start_time_overall)/60. ) )
+        (time.time() - start_time_overall)/60. ) ) #40 min to create binned data using pickles
 
 if __name__ == '__main__':
     main()
