@@ -93,7 +93,7 @@ report_performance = function(pdata) {
 
 #run model and obtain CV predicted probabilities
 run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_cats, dim_reduce_method, 
-                             dim_reduce_num, dim_reduce_covar, reduce_in_CV, cVars, LCMS_vars, clinic_varsD) {
+                             dim_reduce_num, dim_reduce_covar, reduce_in_CV, cVars, LCMS_vars, clinic_varsD, V) {
   #parameters:
     #outD: function will return this dataframe with added row of output
     #mydata: data to use in analysis
@@ -109,7 +109,7 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
     #reduce_in_CV: T if dimension reduction should be done in CV step.  F is dim reduc should be done before CV step.
     #cVars: clinical variables for consideration (=cvars_noMiss by default)
     #LCMS_vars: MFs for consideration (=allMFs by default)
-  V = 10 #number of folds to use in CV
+    #V: number of folds to use in CV
   cat(paste("\n\n**** running for", predictor_cats, dim_reduce_method, dim_reduce_num, pred_method,"****\n\n"))
   
   #this list will contain variables selected in the subsetting process
@@ -118,18 +118,27 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
   dim_reduce_nums = list()
   
   #partition data into 10 equally sized peices
-  set.seed(123)
-  nobs = nrow(mydata)
-  partition_nobs <- ceiling(0.1 * nobs) #size of each peice
-  nvec = rep(seq(from=1, to=10),partition_nobs)[1:nobs] #vector of values 1 - 10 of length nobs with [approximately] equal numbers of each value
-  rvec = permute(nvec) #random permutation of vector
+  #set.seed(123)
+  #nobs = nrow(mydata)
+  #partition_nobs <- ceiling(0.1 * nobs) #size of each peice
+  #nvec = rep(seq(from=1, to=10),partition_nobs)[1:nobs] #vector of values 1 - 10 of length nobs with [approximately] equal numbers of each value
+  #rvec = permute(nvec) #random permutation of vector
   
+  #partition data into 10 equally sized peices -- with stratification according to outcome (10/22/2014 modification)
+  set.seed(123)
+  #Y0 will be a list of 10 elements, each containing index numbers of a random 1/10 of observations for which Y=0 
+  Y0 <- split(sample(which(mydata$DEN_dum==0)), rep(1:V, length=length(which(mydata$DEN_dum==0)))) 
+  #Y1 will be a list of 10 elements, each containing index numbers of a random 1/10 of observations for which Y=1 
+  Y1 <- split(sample(which(mydata$DEN_dum==1)), rep(1:V, length=length(which(mydata$DEN_dum==1))))
+  #folds will be a list of 10 elements, each containing 1 of Y0's elements combined with 1 of Y1's elements
+  folds <- vector("list", length=V)
+  for (v in seq(V)) {folds[[v]] <- c(Y0[[v]], Y1[[v]])}
   
   ### cross-validation step: fit model and predict for left out fold ###
-  for(i in seq(from=1, to=V)) {
-
-    trainD = mydata[which(rvec!=i),] #training set for first run 
-    testD = mydata[which(rvec==i),]  #test set for first run
+  for(v in seq(from=1, to=V)) {
+    
+    trainD = mydata[-folds[[v]],] #training set for first run 
+    testD = mydata[folds[[v]],]   #test set for first run
     
     ### determine which variables to include in model ###
     if(reduce_in_CV==T & dim_reduce_method!="none"){
@@ -180,11 +189,11 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
       mylogit <- glm(myformula, data = trainD, family = "binomial")
       #print(summary(mylogit))
       #obtain predicted probabilities for left out chunk using regression fit
-      mydata[which(rvec==i),"DEN_prob"] <- predict(mylogit, newdata=testD, type="response")
+      mydata[folds[[v]],"DEN_prob"] <- predict(mylogit, newdata=testD, type="response")
     }
     if(pred_method=="RF"){
       rf = randomForest(myformula, data=trainD, ntree=500)
-      mydata[which(rvec==i),"DEN_prob"] = predict(rf, testD, type="prob")[,2]
+      mydata[folds[[v]],"DEN_prob"] = predict(rf, testD, type="prob")[,2]
     }
     if(pred_method=="SL"){
 
@@ -217,12 +226,12 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
                                X=as.data.frame(trainD_num[,c(predictors)]), newX=as.data.frame(testD_num[,c(predictors)]),
                                family=binomial(), SL.library=mySL.library,
                                method = "method.NNloglik", verbose=FALSE) #9-28-14: changed method from NNLS to NNloglik (Alan's suggestion)
-      mydata[which(rvec==i),"DEN_prob"] = SLresults$SL.predict #predicts for obs in newX, as we want
-      if(i==1){
-        SLcoefs = as.data.frame(t(c(i,SLresults$coef)))
+      mydata[folds[[v]],"DEN_prob"] = SLresults$SL.predict #predicts for obs in newX, as we want
+      if(v==1){
+        SLcoefs = as.data.frame(t(c(v,SLresults$coef)))
         #print(SLcoefs)
       }else{
-        newrow = as.data.frame(t(c(i,SLresults$coef)))
+        newrow = as.data.frame(t(c(v,SLresults$coef)))
         #print(newrow)
         SLcoefs = smartbind(SLcoefs, newrow, fill=NA)
       }
@@ -251,7 +260,7 @@ run_CV_and_report = function(outD, mydata, pred_method, predictors, predictor_ca
     MF_freqs_ordered = list() #create this empty list so there is no complaining
   }
   
-  cvAUCreport <- ci.cvAUC(predictions=mydata$DEN_prob, labels=mydata$DEN_dum, folds=rvec, confidence=0.95)
+  cvAUCreport <- ci.cvAUC(predictions=mydata$DEN_prob, labels=mydata$DEN_dum, folds=folds, confidence=0.95)
   print(cvAUCreport)
   myreport = report_performance(mydata[,c("DEN_dum","DEN_prob")])
   print(myreport)
@@ -326,13 +335,14 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
   allCount = clinicCount + MFcount
   
   #initialize dataframe to hold results
-  outD=data.frame(a=character(0), f=logical(0), b=character(0), c=integer(0), d=character(0),
-                  x=integer(0), y=integer(0), z=integer(0), q=integer(0), p=integer(0), 
-                  e=integer(0), f=integer(0), g=integer(0), h=integer(0), k=integer(0), stringsAsFactors = FALSE)
+  outD=data.frame(x1=character(0), x2=logical(0), x3=character(0), x4=integer(0), x5=character(0),
+                  x6=integer(0), x7=integer(0), x8=integer(0), x9=integer(0), x10=integer(0), 
+                  x11=integer(0), x12=integer(0), x13=integer(0), x14=integer(0), x15=integer(0), 
+                  x16=integer(0), stringsAsFactors = FALSE)
   colnames(outD) = c("predictors", "dim_reduce_covar", "reduce_method", "r_num", "pred_method", 
-                     "sensitivity", "specificity", "pred_err","ROC_area","MSE", 
+                     "sensitivity", "specificity", "pred_err","ROC_area","MSE", "SD_SqEr",
                      "cvAUC","cvAUC_se", "cvAUC_ci_lower","cvAUC_ci_upper", "cvAUC_confidence")
-  blanks = list(NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA) 
+  blanks = list(NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA) 
   outD[1,] = blanks #seems ridiculous, but adding this blank row is only way I could get it working
   #this will hold info on which MFs were selected, if such an analysis is desired
   selected_MFs = "NA"
@@ -358,7 +368,7 @@ run_predictions = function(clinic_varsD, outcome, mydata, sample_name, reduce_in
     return(run_CV_and_report(
       outD, mydata=XD, pred_method, predictors, predictor_cats, dim_reduce_method, 
       dim_reduce_num, dim_reduce_covar, reduce_in_CV=reduce_in_CV, 
-      cVars=cvars_noMiss, LCMS_vars=allMFs, clinic_varsD=clinic_varsD))
+      cVars=cvars_noMiss, LCMS_vars=allMFs, clinic_varsD=clinic_varsD, V=10))
   }
   
   ###############################################################################
