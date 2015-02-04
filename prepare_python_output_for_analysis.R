@@ -7,10 +7,6 @@
 
 prepare_python_output = function(respD, lcms_run, sample_name){
   
-  #### Esablish functions to be run #### 
-  source(paste(codeDir, "clean_data_functions.R", sep=""))
-  source(paste(codeDir, "prediction_functions.R", sep=""))
-  
   #### get variable naming convention compatible to what prediction code expects ####
   #LCMS data columns should be labeled with prefix "MZ_", and patient ID should be called "code"
   replace_X_with_MZ = function(x) sub("X", "MZ_", x)
@@ -32,21 +28,42 @@ prepare_python_output = function(respD, lcms_run, sample_name){
     respD = get_study(respD, lcms_run, clinical_inputsDir)
   } 
   
-  # merge LCMS with clinical 
+  # merge LCMS with clinical (no imputations)
   load(paste(outputsDir,"clinical_restricted_clean.RData", sep="")) 
-  #using the restricted clinical data will correspond to dropping patients 86 and 1208 (the ones Natalia says are bad)
+  # using the restricted clinical data will correspond to dropping patients 86 and 1208 (the ones Natalia says are bad)
   comboD <- merge(clinical_restricted_clean, respD, by=c("code","Study"), all=F) 
-  return(comboD)
+  # keep only 1 observation for patient 251 (todo)
+    #eliminating the ID0251 observation with MZ_1 value of 755341 resulted in better prediction than eliminating the one with MZ_1=773792
+    #Natalia suggested going with the one with better mass spec data but it was not clear by observation which it should be -- see 9-7-2014 email.
+  comboD = comboD[which(comboD$code!="ID0251" | comboD$MZ_1!=755341),]
+  
+  # merge LCMS with clinical data including imputations
+  load(paste(outputsDir,"clin_full_wImputedRF1.RData", sep="")) 
+  comboD_wImpRF1 <- merge(clin_full_wImputedRF1, respD, by=c("code","Study"), all=F) 
+  # drop patients 86, 1208, and one of the 251 observations
+  comboD_wImpRF1 = comboD_wImpRF1[which(comboD_wImpRF1$code!="ID0086" & 
+                                        comboD_wImpRF1$code!="ID1208" &
+                                       (comboD_wImpRF1$code!="ID0251" | comboD_wImpRF1$MZ_1!=755341)),] 
+  
+  
+  return( list(comboD, comboD_wImpRF1) )
 
 }
 
 load(paste(outputsDir,"df1_from_python.RData", sep="")) #will load respD1_bins50x50 into R 
-comboD1_bins50x50 = prepare_python_output(respD1_bins50x50, lcms_run=1) #89 obs (due to repeated patient 251 -- see 9-7-2014 email)
+comboD1_bins50x50 = prepare_python_output(respD1_bins50x50, lcms_run=1)[[1]] #88 obs 
 save(comboD1_bins50x50, file=paste(outputsDir,"df1_from_python_withRdata.RData", sep=""))
+comboD1_bins50x50_wImpRF1 = prepare_python_output(respD1_bins50x50, lcms_run=1)[[2]] #88 obs
+save(comboD1_bins50x50_wImpRF1, file=paste(outputsDir,"df1_from_python_wImpRF1.RData", sep=""))
+
 
 load(paste(outputsDir,"df2_from_python.RData", sep="")) #will load respD2_bins50x50 into R 
-comboD2_bins50x50 = prepare_python_output(respD2_bins50x50, lcms_run=2)
+comboD2_bins50x50 = prepare_python_output(respD2_bins50x50, lcms_run=2)[[1]]
 save(comboD2_bins50x50, file=paste(outputsDir,"df2_from_python_withRdata.RData", sep=""))
+comboD2_bins50x50_wImpRF1 = prepare_python_output(respD2_bins50x50, lcms_run=2)[[2]] 
+save(comboD2_bins50x50_wImpRF1, file=paste(outputsDir,"df2_from_python_wImpRF1.RData", sep=""))
+
+
 
 #combine D1 with D2 data
 #list the columns that are in common between serum runs 1 and 2
