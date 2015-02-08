@@ -9,19 +9,35 @@
 rm(list = ls()) #start with blank slate (clear everything from workspace)
 
 library(lattice)
-library(SuperLearner)
+library(ggplot2)
+library(reshape2)
+library(sjPlot)
+#library(SuperLearner) #the CRAN version will sometimes throw errors
+#library(devtools)
+#install_github("ecpolley/SuperLearner") #this version corrects bug in CRAN version (last downloaded on 1-6-2015)
+library(SuperLearner) #will load whichever SuperLearner was last installed
 library(gtools) #enables smartbind
 #library(leaps) #for best subset selection
 library(bestglm) #for best subset selection
 library(MESS) #for area under the curve
 library(randomForest)
 library(glmnet) #lasso
+library(e1071) #svm
+library(rpart) #Recursive partitioning for classification, regression and survival trees
+library(party) #classification tree algorithm
+library(caret) #classification package that runs with SL package
+library(survival)
+library(LogicReg) #Logic regression (to find predictors that are boolean combos of original predictors)
+library(cvAUC) 
+library(Hmisc) #allows labeling of data.frame columns (for documentation's sake), and has useful function contents()
+library(xtable)
+library(parallel) #for super learner to make use of multiple cores
 #library(xlsReadWrite) #need newer version of R for this package (NA for 3.1.1 also)
 
-#### Please see "Guide to Dengue Data.xls" for documentation on data used in this file
 
-
-#### Establish directories ####
+###############################################################################
+########################## Establish directories ##############################
+###############################################################################
 
 #directory containing code
 codeDir = "/srv/scratch/carolyn/Dengue_code/" #on Amold from Amold's perspective
@@ -36,152 +52,217 @@ lcmsCO_inputsDir = paste(homeDir, "lcms_data_processed_in_CO/Cleaned/", sep="")
 outputsDir = paste(homeDir, "intermediate_data/", sep="")
 resultsDir = paste(homeDir, "Results/", sep="")
 
+#directory containing code
+codeDir = "/srv/scratch/carolyn/Dengue_code/" #on Amold from Amold's perspective
+#codeDir = "/home/carolyn/temp_Dengue_code/" #on myPC
+
+###############################################################################
+##################### Esablish functions to be run ############################
+
+source(paste(codeDir,"clean_data_functions.R",sep=""))
+source(paste(codeDir,"clean_clinical_data_functions_v2.R",sep=""))
+source(paste(codeDir,"summarize_clinical_functions.R",sep=""))
+
+
+###############################################################################
+########################### Create data to be used ############################
+###############################################################################
+
+#info on clinical variables (data types and applicability to various analyses)
+clinic_varsD = read.delim(paste(clinical_inputsDir,"List of clinical variables for analysis_v5.txt", sep=""), header=TRUE, nrows=500)
+
+#this takes a bit of time to run (~ 10 min) b/c of the imputing missing values step
+#source(paste(codeDir,"create_data_for_analysis.R",sep="")) 
+
+
+###############################################################################
+########################### Load data to be used ##############################
+###############################################################################
+
+# this data was created in "create_data_for_analysis.R" - contains all clinical data (n=1624)
+load(paste(outputsDir,"clinical_full_clean.RData", sep="")) #loads clinical_full_clean
+load(paste(outputsDir,"clinical_D1_clean.RData", sep="")) #loads clinical_D1_clean
+
+# this data was created in "create_data_for_analysis.R" - contains all clinical data with imputed values
+load(paste(outputsDir,"clin_full_wImputedRF1.RData", sep="")) #loads clin_full_wImputedRF1
+
+# this data was created in "create_data_for_analysis.R" - contains mass hunter LCMS combined with clinical
+load(paste(outputsDir,"comboD1_filter50n.RData", sep="")) #loads comboD1_filter50n
+#load(paste(outputsDir,"comboD3_filter50n.RData", sep="")) #loads comboD3_filter50n
+#load(paste(outputsDir,"comboD5_filter50n.RData", sep="")) #loads comboD5_filter50n
+# this data was created in "create_data_for_analysis.R" - contains mass hunter LCMS combined with imputed clinical
+load(paste(outputsDir,"comboD1_filter50n_wImpRF1.RData", sep="")) #loads comboD1_filter50n_wImpRF1
+#load(paste(outputsDir,"comboD3_filter50n_wImpRF1.RData", sep="")) #loads comboD3_filter50n_wImpRF1
+#load(paste(outputsDir,"comboD5_filter50n_wImpRF1.RData", sep="")) #loads comboD5_filter50n_wImpRF1
+
+# this data was created in "prepare_python_output_for_analysis.R" - contains binned LCMS combined with clinical
+#load(paste(outputsDir,"df1_from_python_withRdata.RData", sep="")) #loads comboD1_bins50x50
+load(paste(outputsDir,"df1_from_python_wImpRF1.RData", sep="")) #loads comboD1_bins50x50_wImpRF1
+#load(paste(outputsDir,"df2_from_python_withRdata.RData", sep="")) #loads comboD2_bins50x50
+
+
+###############################################################################
+############################ Summarize data ###################################
+###############################################################################
+
+#source(paste(codeDir,"summarize_clinical_data.R",sep=""))
+
+
+###############################################################################
+############################ Predict diagnosis ################################
+###############################################################################
 
 #### Esablish functions to be run #### 
-source(paste(codeDir, "clean_data_functions.R", sep=""))
+source(paste(codeDir,"prediction_functions_v2.R",sep=""))
+
+#### Specify location to place output ####
+#sink(paste(resultsDir,"predictions_clinical_DEN_v9.txt",sep=""), append=FALSE, split=TRUE)
+
+#get list of clinical variables to include in prediction method
+covarlist_all = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
+                                eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
+                                XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
+covarlist_CohortRestrict = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
+                                    eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
+                                    XD=clinical_full_clean, restrict_to_cohort_vars=T, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
+covarlist_noUltraX = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
+                                         eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
+                                         XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=F, BloodLab=T)
+covarlist_genOnly = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
+                                        eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
+                                        XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=F, BloodLab=F)
+covarlist_noMiss = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=T, 
+                                        eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
+                                        XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=F, UltraX=T, BloodLab=T)
+#These are the 41 clinical vars included in original (R33) analysis -- the ones that are never missing among our 88 samples 
+covarDEN_88noMiss = get_clinic_var_list(clinic_varsD, outcome="ND.vs.DEN", eliminate_vars_with_missings=T, 
+                                       eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
+                                       XD=clinical_D1_clean, restrict_to_cohort_vars=T, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
 
 
-####################################################################
-#################### Clean the abundance data ######################
-####################################################################
+############### Predictions using clinical info only ##########################
+
+#test
+#testme = run_predictions(clinic_varsD, covarlist_noUltraX, "ND.vs.DEN", comboD1_filter50n_wImpRF1, paste("D1, noUltraX clinical"), 
+#                         include_imp_dums="all")
+
+#options(error=browser()) #view problem
+
+run_runs = function(pdata, pdata_desc, imp){
+  #pdata is data to use, pdata_desc is string that descibes data, imp is "all","study" or "none" for inclusion of imputation indicators
+  #all other parameters are from namespace
+  
+  ##### ND vs DEN #####
+  DEN_allClin = run_predictions(clinic_varsD, covarlist_all, "ND.vs.DEN", pdata, paste(pdata_desc,", all clinical"), include_imp_dums=imp)
+  DEN_cohortRclin = run_predictions(clinic_varsD, covarlist_CohortRestrict, "ND.vs.DEN", pdata, paste(pdata_desc,", CohortRestrict clinical"), include_imp_dums=imp)
+  #DEN_noUXclin = run_predictions(clinic_varsD, covarlist_noUltraX, "ND.vs.DEN", pdata, paste(pdata_desc,", noUltraX clinical"), include_imp_dums=imp)
+  #DEN_genOnlyclin= run_predictions(clinic_varsD, covarlist_genOnly, "ND.vs.DEN", pdata, paste(pdata_desc,", genOnly clinical"), include_imp_dums=imp)
+  #DEN_noMiss88clin= run_predictions(clinic_varsD, covarDEN_88noMiss, "ND.vs.DEN", pdata, paste(pdata_desc,", noMiss88 clinical"), include_imp_dums=imp)
+  ##### DF vs DHF/DSS #####
+  #DHF_allClin = run_predictions(clinic_varsD, covarlist_all, "DF.vs.DHF.DSS", pdata, paste(pdata_desc,", all clinical"), include_imp_dums=imp)
+  #DHF_noUXclin = run_predictions(clinic_varsD, covarlist_noUltraX, "DF.vs.DHF.DSS", pdata, paste(pdata_desc,", noUltraX clinical"), include_imp_dums=imp)
+  #DHF_cohortRclin = run_predictions(clinic_varsD, covarlist_CohortRestrict, "DF.vs.DHF.DSS", pdata, paste(pdata_desc, ", CohortRestrict clinical"), include_imp_dums=imp)
+  #DHF_genOnlyclin= run_predictions(clinic_varsD, covarlist_genOnly, "DF.vs.DHF.DSS", pdata, paste(pdata_desc,", genOnly clinical"), include_imp_dums=imp)
+  #DHF_noMissclin= run_predictions(clinic_varsD, covarlist_noMiss, "DF.vs.DHF.DSS", pdata, paste(pdata_desc,", noMiss clinical"), include_imp_dums=imp)
+  
+  #combine results and output to file
+  #myruns = rbind(DEN_allClin[[1]], DEN_cohortRclin[[1]], DEN_noUXclin[[1]], DEN_genOnlyclin[[1]], DEN_noMissclin[[1]],
+  #      DHF_allClin[[1]], DHF_cohortRclin[[1]], DHF_noUXclin[[1]], DHF_genOnlyclin[[1]], DHF_noMissclin[[1]])
+  #myruns = rbind(DEN_allClin[[1]], DEN_cohortRclin[[1]],  DEN_noUXclin[[1]], DEN_genOnlyclin[[1]], DEN_noMiss88clin[[1]])
+  myruns = rbind(DEN_allClin[[1]], DEN_cohortRclin[[1]])
+  return(myruns)
+}
+
+Run_n1624_clinOnly=F  #need to re-rerun with imput dums at some point
+if(Run_n1624_clinOnly==T){
+  #pred with full data -- include imputed values and also indicators of imputation (need to rerun, though results look very similar to results from above)
+  all_wImputdums_clinOnly = run_runs(clin_full_wImputedRF1, pdata_desc="all data",imp="all")
+  write.csv(x=all_wImputdums_clinOnly, file=paste(resultsDir,"all_wImputdums_clinOnly.txt",sep=""), row.names = FALSE)
+  #pred with full data --- include imputed values with no imputation indicators
+  all_wImput_clinOnly = run_runs(clin_full_wImputedRF1, pdata_desc="all data", imp="none")
+  write.csv(x=all_wImput_clinOnly, file=paste(resultsDir,"all_wImput_clinOnly.txt",sep=""), row.names = FALSE)
+  #pred with full data --- include imputed values and indicator of study type (cohort), but no imputation indicators
+  all_wImputstudy_clinOnly = run_runs(clin_full_wImputedRF1, pdata_desc="all data", imp="study")
+  write.csv(x=all_wImputstudy_clinOnly, file=paste(resultsDir,"all_wImputstudy_clinOnly.txt",sep=""), row.names = FALSE)
+}
+
+Run_D1_clinOnly=F #finished running this (without age or DaysSick)
+if(Run_D1_clinOnly==T){
+  #create D1 data that has imputed info
+  clin_D1_wImputedRF1 = clin_full_wImputedRF1[which(clin_full_wImputedRF1$serum==1),]
+  #pred with full data --- include imputed values with no imputation indicators
+  D1_wImput_clinOnly = run_runs(clin_D1_wImputedRF1, pdata_desc="D1", imp="none")
+  write.csv(x=D1_wImput_clinOnly, file=paste(resultsDir,"D1_wImput_clinOnly.txt",sep=""), row.names = FALSE)
+  #pred with D1 data --- include imputed values and indicator of study type (cohort), but no imputation indicators
+  D1_wImputstudy_clinOnly = run_runs(clin_D1_wImputedRF1, pdata_desc="D1", imp="study")
+  write.csv(x=D1_wImputstudy_clinOnly, file=paste(resultsDir,"D1_wImputstudy_clinOnly.txt",sep=""), row.names = FALSE)
+  #pred with D1 data -- include imputed values and also indicators of imputation
+  D1_wImputdums_clinOnly = run_runs(clin_D1_wImputedRF1, pdata_desc="D1", imp="all") #trimLogit error for DEN w noUltraX and w genOnly
+  write.csv(x=D1_wImputdums_clinOnly, file=paste(resultsDir,"D1_wImputdums_clinOnly.txt",sep=""), row.names = FALSE)
+}
 
 
-#notes on function call:
-#if roundme parameter is not specified, then it is assumed to be false and resulting dataset will contain original MZ values
+############### Predictions using clinical and LCMS ###########################
 
-#for Nicaragua Serum samples
-respD1_filter50n = clean_LCMS(infile="LCMS_serum_Nica_50percent_first batch.txt", lcms_run=1, printme=TRUE)
-respD1_filter10n = clean_LCMS(infile="LCMS_serum_Nica_10percent_first batch.txt", lcms_run=1, printme=TRUE)
-respD2_filter50n = clean_LCMS(infile="LCMS_serum_Nica_50percent_batches 3 and 4.txt", lcms_run=2, printme=TRUE) #only 80 samples
-respD2_filter10n = clean_LCMS(infile="LCMS_serum_Nica_10percent_batches 3 and 4.txt", lcms_run=2, printme=TRUE) #83 samples
+## Results using just sample of 88.
+# mass hunter
+resultsD1_DEN = run_predictions(clinic_varsD, covarlist_all, "ND.vs.DEN", comboD1_filter50n_wImpRF1, "CohortRestrict, D1", include_imp_dums="none")
+#write.csv(x=resultsD1_DEN[[1]], file=paste(resultsDir,"D1_wImput_LCMS_selectionMethods_MH.txt",sep=""), row.names = FALSE)
+# binned
+resultsD1_DEN_bins = run_predictions(clinic_varsD, covarlist_CohortRestrict, "ND.vs.DEN", comboD1_bins50x50_wImpRF1, "CohortRestrict, D1", include_imp_dums="none")
+write.csv(x=resultsD1_DEN_bins[[1]], file=paste(resultsDir,"D1_wImput_LCMS_bins88b_selection.txt",sep=""), row.names = FALSE)
+#serum batch 2 (n=75)
+clin_D2_wImputedRF = clin_full_wImputedRF1[which(clin_full_wImputedRF1$serum==2),]
+resultsD1_DEN = run_predictions(clinic_varsD, covarlist_all, "ND.vs.DEN", clin_D2_wImputedRF, "CohortRestrict, D2", include_imp_dums="none")
 
-#for non-invasive Nicaraguan samples (urine and saliva)
-respD3_filter50n = clean_LCMS(infile="LCMS_saliva_Nica_50percent.txt", lcms_run=3, printme=TRUE) #86 (as in LCMS excel)
-temp = clean_LCMS(infile="LCMS_urine_Nica_50percent.txt", lcms_run=5, printme=TRUE) #91 (as in LCMS excel)
-#get rid of duplicated code/study ID (note: this wil keep one of the observation in each duplicate group -- will remove later)
-respD5_filter50n = temp[!duplicated(temp[,c("code","Study")]),] #86 (and still more to remove)
+if(T==F){
+  
+### Non-invasive samples from Nicaragua -- ND vs DEN only ###
 
-####### Compare frequences of MZ values across datasets (histograms) ########
+resultsD3_DEN = run_predictions(clinic_varsD, covarlist_CohortRestrict, "ND.vs.DEN", comboD3_filter50n_wImpRF1, "CohortRestrict, saliva, D3", include_imp_dums="none")
+resultsD3_DEN[[1]]
+write.csv(x=resultsD3_DEN[[1]], file=paste(resultsDir,"resultsD3_DEN_CohortRestrict.txt"), row.names = FALSE)
 
-graph_MZ_frequencies(respD1_filter50n, respD2_filter50n, "Round1_filter50", "Round2_filter50", "f50_")
-graph_MZ_frequencies(respD1_filter10n, respD2_filter10n, "Round1_filter10", "Round2_filter10", "f10_")
-
-
-####### Combine the abundance data (runs 1 and 2) ########
-
-#list the columns that are in common between serum runs 1 and 2
-commonvars = intersect(colnames(respD2_filter50n),colnames(respD1_filter50n)) #only 40 compound identifiers in common (10% data)
-resp_comboD = rbind(respD1_filter50n[,commonvars], respD2_filter50n[,commonvars])
-
-#just get list of ID codes (so I can limit clinical data to patients for whom we have LC-MS data)
-IDs_in_resp_D1_D2 = resp_comboD[,c("code","Study","LCMS_run")]
-temp = merge(IDs_in_resp_D1_D2[,c("code","Study","LCMS_run")], 
-             respD3_filter50n[,c("code","Study","LCMS_run")], by=c("code","Study"), all=T)
-temp$serum = temp$LCMS_run.x
-temp$LCMS_run.x = NULL
-temp$saliva = temp$LCMS_run.y
-temp$LCMS_run.y = NULL
-IDs_in_resp_all = merge(temp, respD5_filter50n[,c("code","Study","LCMS_run")], by=c("code","Study"), all=T)
-IDs_in_resp_all$urine = IDs_in_resp_all$LCMS_run
-IDs_in_resp_all$LCMS_run = NULL
-#are all saliva and urine samples are from same people? yes
-table(IDs_in_resp_all$urine, IDs_in_resp_all$saliva, useNA="ifany")
-#are any saliva and serum samples from same people? just 1 (might be mistake -- ID1408 in cohort, which was already problematic)
-table(IDs_in_resp_all$serum, IDs_in_resp_all$saliva, useNA="ifany")
+resultsD5_DEN = run_predictions(clinic_varsD, covarlist_CohortRestrict, "ND.vs.DEN", comboD5_filter50n_wImpRF1, "CohortRestrict, urine, D5", include_imp_dums="none")
+resultsD5_DEN[[1]]
+write.csv(x=resultsD5_DEN[[1]], file=paste(resultsDir,"resultsD5_DEN_CohortRestrict.txt"), row.names = FALSE)
 
 
-######### Other checks and descriptives of abundance data #############
+### Serum Samples from Nicaragua ###
 
-#missingness (exclude "LCMS_run","Study", and "code" columns)
-missingsD = sapply(respD1_filter50n[grep("MZ_",colnames(respD1_filter50n))], function(x) sum(is.na(x))) 
-#missingsD[which(missingsD==0)] #examine the compounds that are never missing
-fileprefix = "R1_filter50"
-png(paste(resultsDir,fileprefix,"_missingMZ.png", sep=""))
-histogram(missingsD, xlim=c(0,30), xlab="number of observations with missing values within each MZ value",
-          main="LC-MS Run 1 with 50% filter")
-dev.off()
-summary(missingsD)
-table(missingsD)
-sum(missingsD==0)/dim(respD1_filter50n)[2] #fraction of compounds that have no missings
-sum(missingsD<2)/dim(respD1_filter50n)[2] #fraction of compounds that have 0 or 1 missings
-quantile(missingsD, c(10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99)/100) #more percentiles
-#do we have any zeros for abundance?
-zerosD = sapply(resp_comboD, function(x) sum(x==0, na.rm=TRUE))
-sum(zerosD!=0, na.rm=TRUE) #no zeros
+resultsD1_DEN = run_predictions(clinic_varsD, covarlist, "ND.vs.DEN", comboD1_bins50x50, "serum, D1")
+resultsD1_DEN[[1]] #view results
+write.csv(x=resultsD1_DEN[[1]], file=paste(resultsDir, "resultsD1_DEN_bins_v7.txt",sep=""), row.names = FALSE)
+
+resultsD1_DEN = run_predictions(clinic_varsD, covarDEN_88noMiss, "ND.vs.DEN", comboD1_filter50n_wImpRF1, "noMiss88, serum, D1", include_imp_dums="none")
+resultsD1_DEN[[1]] #view results
+write.csv(x=resultsD1_DEN[[1]], file=paste(resultsDir,"resultsD1_DEN_CO_v9_last.txt",sep=""), row.names = FALSE)
+
+resultsD2_DEN = run_predictions(clinic_varsD, "ND.vs.DEN", comboD2_filter50n, "serum, D2")
+resultsD2_DEN[[1]] #view results
+write.csv(x=resultsD2_DEN[[1]], file=paste(resultsDir,"resultsD2_DEN_v7.txt",sep=""), row.names = FALSE)
 
 
-####################################################################
-##################### Clean the clinical data ######################
-####################################################################
+resultsD1_SDEN = run_predictions(clinic_varsD, "DF.vs.DHF.DSS", comboD1_filter50n, "serum, D1")
+#selected_D1_MFs_SDEN = resultsD1_SDEN[[2]]
+write.csv(x=resultsD1_SDEN[[1]], file=paste(resultsDir,"resultsD1_SDEN_v6a.txt"), row.names = FALSE)
 
-#Process text files
-#Create clinical_comboD 
-clinic_varsD = read.delim(paste(clinical_inputsDir,"List of clinical variables for analysis.txt", sep=""), header=TRUE, nrows=500)
-source(paste(codeDir, "clean_clinical_data.R", sep="")) #produces clinical_comboD
+resultsD2_SDEN = run_predictions(clinic_varsD, "DF.vs.DHF.DSS", comboD2_filter50n, "serum, D2")
+selected_D2_MFs_SDEN = resultsD2_SDEN[[2]]
+write.csv(x=resultsD2_SDEN[[1]], file=paste(resultsDir,"resultsD2_SDEN_v6a.txt"), row.names = FALSE)
 
-
-#drop observations with unknown final dengue dx
-clinical_comboD_prelim = clinical_comboD[which(!is.na(clinical_comboD$DxFinal4cat)),]
-#keep only observations for which we have LC-MS data
-clinical_comboD_clean = merge(IDs_in_resp_all, clinical_comboD_prelim, by=c("code","Study"), all=FALSE)
-
-## Write this clinical data to file for easy future access ##
-write.csv(x=clinical_comboD_clean, file=paste(outputsDir,"clinical_comboD_clean.txt"), row.names = FALSE)
-#clinical_comboD_clean = read.csv(paste(outputsDir,"clinical_comboD_clean.txt"), header=TRUE)
-#WARNING: after reading in the csv, must reconvert variables to factors
-#saving the dataframe like this will allow for future use in R without format trouble
-save(clinical_comboD_clean, file=paste(outputsDir,"clinical_comboD_clean.RData", sep=""))
-#now load file in future programs like this (will load dataframe object named "clinical_comboD_clean.RData")
-   #load(paste(outputsDir,"clinical_comboD_clean.RData", sep="")) 
-
-####### Summarize lab and clinical data ####### 
-
-summarize_clinical(clinical_comboD_clean)
-
-
-##############################################################################
-################ additional investigation of abundance data ##################
-##############################################################################
-
-source(paste(codeDir,"investigate_abundance_filtering.R",sep=""))
-#CONCLUSION: the filtering that Natalia is doing differs from what we thought
-
-
-
-##############################################################################
-################ Combine abundance with clinical data ########################
-##############################################################################
-
-#Data that includes serum runs 1 and 2
-comboD <- merge(clinical_comboD_clean, resp_comboD, by=c("code","Study"), all=F)
-dim(comboD)[1] #number of rows in resulting data -- a perfect match
-
-#Data for serum run 1 only
-comboD1_filter50n <- merge(clinical_comboD_clean, respD1_filter50n, by=c("code","Study"), all=F) #88 obs
-#Data for serum run 2 only
-comboD2_filter50n <- merge(clinical_comboD_clean, respD2_filter50n, by=c("code","Study"), all=F) #75 obs
-
-#Data for Nicaragua saliva
-temp <- merge(clinical_comboD_clean, respD3_filter50n, by=c("code","Study"), all=F) 
-#remove observation that probably has incorrect ID
-comboD3_filter50n = temp[which(temp$code!="ID1408"),]  #85
-table(comboD3_filter50n$DxFinal4cat) #cannot to DF vs DHF/DSS analysis with such few obs
-
-#Data for Nicaragua urine
-temp <- merge(clinical_comboD_clean, respD5_filter50n, by=c("code","Study"), all=F) 
-#remove observation that probably has incorrect ID and those which were duplicated in this data
-comboD5_filter50n = temp[which(temp$code!="ID1408" & temp$code!="ID1304" & temp$code!="ID1315" & 
-                    temp$code!="ID1342" & temp$code!="ID1348" & temp$code!="ID1380"),]  #80
-table(comboD5_filter50n$DxFinal4cat) #cannot to DF vs DHF/DSS analysis with such few obs
+## combine lists of MFs selected by dimension reduction methods
+flist_DEN = merge(selected_D1_MFs_DEN, selected_D2_MFs_DEN,  by="Var1", all=TRUE)
+flist_DEN
+write.csv(x=flist_DEN, file=paste(resultsDir,"MFs_selected_by_RF_DEN_v6a.txt"), row.names = FALSE)
+flist_SDEN = merge(selected_D1_MFs_SDEN, selected_D2_MFs_SDEN,  by="Var1", all=TRUE)
+flist_SDEN
+write.csv(x=flist_SDEN, file=paste(resultsDir,"MFs_selected_by_RF_SDEN_v6a.txt"), row.names = FALSE)
 
 
 ###############################################################################
 #################### Variable Importance Analysis without CV ##################
 ###############################################################################
-
-#### Esablish functions to be run #### 
-source(paste(codeDir, "prediction_functions.R",sep=""))
-
 
 D1_VIM_covarF = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD1_filter50n, dim_reduce_covar=F, "D1_covarF")
 D1_VIM_covarT = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD1_filter50n, dim_reduce_covar=T, "D1_covarT")
@@ -204,58 +285,5 @@ serum_VIM = merge(D1_VIM, D2_VIM, by="Row.names", all=T)
 noninvasive_VIM = merge(D3_VIM, D5_VIM, by="Row.names", all=T)
 VIM_RF = merge(serum_VIM, noninvasive_VIM, by="Row.names", all=T)
 write.csv(x=VIM_RF, file=paste(resultsDir,"VIM_RF_DEN.txt"), row.names = FALSE)
+}
 
-
-###############################################################################
-############################ Predict diagnosis ################################
-###############################################################################
-
-
-#### Specify location to place output ####
-sink(paste(resultsDir,"prediction_output_DEN_D3.txt",sep=""), append=FALSE, split=TRUE)
-
-
-#### Esablish functions to be run #### 
-source(paste(codeDir,"prediction_functions.R",sep=""))
-
-
-### Non-invasive samples from Nicaragua -- ND vs DEN only ###
-
-resultsD3_DEN = run_predictions(clinic_varsD, "ND.vs.DEN", comboD3_filter50n, "saliva, D3", reduce_in_CV=T)
-#selected_D1_MFs_DEN = resultsD1_DEN[[2]]
-resultsD3_DEN[[1]]
-write.csv(x=resultsD3_DEN[[1]], file=paste(resultsDir,"resultsD3_DEN_v7.txt"), row.names = FALSE)
-
-resultsD5_DEN = run_predictions(clinic_varsD, "ND.vs.DEN", comboD5_filter50n, "urine, D5", reduce_in_CV=T)
-#selected_D1_MFs_DEN = resultsD1_DEN[[2]]
-resultsD5_DEN[[1]]
-write.csv(x=resultsD5_DEN[[1]], file=paste(resultsDir,"resultsD5_DEN_v7.txt"), row.names = FALSE)
-
-
-### Serum Samples from Nicaragua ###
-
-resultsD1_DEN = run_predictions(clinic_varsD, "ND.vs.DEN", comboD1_filter50n, "serum, D1", reduce_in_CV=T)
-#selected_D1_MFs_DEN = resultsD1_DEN[[2]]
-resultsD1_DEN[[1]]
-write.csv(x=resultsD1_DEN[[1]], file=paste(resultsDir,"resultsD1_DEN_v6a.txt"), row.names = FALSE)
-
-resultsD1_SDEN = run_predictions(clinic_varsD, "DF.vs.DHF.DSS", comboD1_filter50n, "serum, D1", reduce_in_CV=T)
-#selected_D1_MFs_SDEN = resultsD1_SDEN[[2]]
-write.csv(x=resultsD1_SDEN[[1]], file=paste(resultsDir,"resultsD1_SDEN_v6a.txt"), row.names = FALSE)
-
-resultsD2_DEN = run_predictions(clinic_varsD, "ND.vs.DEN", comboD2_filter50n, "serum, D2", reduce_in_CV=T)
-resultsD2_DEN[[1]]
-selected_D2_MFs_DEN = resultsD2_DEN[[2]]
-write.csv(x=resultsD2_DEN[[1]], file=paste(resultsDir,"resultsD2_DEN_v6a.txt"), row.names = FALSE)
-
-resultsD2_SDEN = run_predictions(clinic_varsD, "DF.vs.DHF.DSS", comboD2_filter50n, "serum, D2", reduce_in_CV=T)
-selected_D2_MFs_SDEN = resultsD2_SDEN[[2]]
-write.csv(x=resultsD2_SDEN[[1]], file=paste(resultsDir,"resultsD2_SDEN_v6a.txt"), row.names = FALSE)
-
-## combine lists of MFs selected by dimension reduction methods
-flist_DEN = merge(selected_D1_MFs_DEN, selected_D2_MFs_DEN,  by="Var1", all=TRUE)
-flist_DEN
-write.csv(x=flist_DEN, file=paste(resultsDir,"MFs_selected_by_RF_DEN_v6a.txt"), row.names = FALSE)
-flist_SDEN = merge(selected_D1_MFs_SDEN, selected_D2_MFs_SDEN,  by="Var1", all=TRUE)
-flist_SDEN
-write.csv(x=flist_SDEN, file=paste(resultsDir,"MFs_selected_by_RF_SDEN_v6a.txt"), row.names = FALSE)
