@@ -12,4 +12,5 @@
 *~
 #ignore stuff in the old folder
 old/
-
+#ignore temp R files
+*.RData
