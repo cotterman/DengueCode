@@ -1,6 +1,6 @@
-#create a version of the data which replaces values for missing compounds with zeros
-#other options: fill with min value observed for that compound,
-#fill with 1/2 of the min value, input value
+### function to create a version of the data which replaces values for missing compounds with zeros
+  #other options: fill with min value observed for that compound,
+  #fill with 1/2 of the min value, input value
 fill_LCMS_blanks = function(mydata){
   cindices = grep("MZ_",colnames(mydata))
   processedD = mydata
@@ -9,8 +9,6 @@ fill_LCMS_blanks = function(mydata){
   processedD[cindices] = lapply(mydata[cindices],FUN=FillMissingsWithZeros)
   return(processedD)
 }
-
-
 
 ### function to read in the LC-MS text file and organize it into dataframe ###
 clean_LCMS = function(infile, lcms_run, roundme=FALSE, decimals=2, printme=FALSE) {
@@ -103,7 +101,6 @@ get_MZ_vals = function(mydata){
   MZ_Nums_reshaped = as.matrix(do.call(rbind.data.frame, MZ_Nums)) #convert list to matrix
   return(MZ_Nums_reshaped)
 }
-
 
 ### function gets list of patient IDs that are present in specified data
 get_IDs_in_common = function(resp_D1D2, respD3_filter50n, respD5_filter50n){

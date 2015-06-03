@@ -1,4 +1,12 @@
 
+#function returns cross tabulation with col and row totals
+tabletot = function(mydata, var1, var2, useNA="no"){
+  t = table(mydata[,var1], mydata[,var2], useNA=useNA)
+  t = cbind(t, rowSums(t))
+  t = rbind(t, colSums(t))
+  print(t)
+}
+
 #function takes data column and returns variance of that column.  will convert factors to numeric values first. 
 var_after_conversion = function(x){
   #R's built-in variance function only works for numeric variables - convert factors and characters to numeric
