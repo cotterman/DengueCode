@@ -192,7 +192,7 @@ get_clinic_var_list = function(clinic_varsD, outcome, eliminate_vars_with_missin
   return(clinic_vars)
 }
 
-### Function to create cateogrical variables using continuous counterparts ###
+### Function to create cateogrical variables using continuous counterparts -- applicable to cohort and hospital datas ###
 create_binary_variables = function(mydata){
   
   #define liver enlargement to be > 2cm
@@ -246,13 +246,6 @@ create_binary_variables = function(mydata){
   mydata[which(is.na(mydata$Torniquete)), "is.torniquete20plus"] = NA #error
   mydata[which(is.na(mydata$Torniquete)), "is.torniquete10plus"] = NA #error
   
-  #this is the one categorical "general symptom" variable
-  mydata$is.pulse_rapid = (mydata$Pulso=="rapid")
-  mydata$is.pulse_strong = (mydata$Pulso=="strong")
-  mydata[which(is.na(mydata$Pulso)), "is.pulse_rapid"] = NA
-  mydata[which(is.na(mydata$Pulso)), "is.pulse_strong"] = NA
-  mydata$is.pulse_danger = (mydata$Pulso=="R" | mydata$Pulso=="N") #danger if rapid or not palpable (#used in DSS classification)
-  
   #age breaks inspired by CART (1.2, 2.5, 3.3, 4.6, 5.5, 6.5, 7.1, 9.5, 11, 12)
   #and by ctree (3.3, 4.6)
   #age is never missing
@@ -279,19 +272,19 @@ create_binary_variables = function(mydata){
   mydata$is.leukopenia = mydata$Leucocitos<=5
   mydata[which(is.na(mydata$Leucocitos)), "is.leukopenia"] = NA
   
-  #these are defined according to appearance in definition of DHF
-  mydata$is.Hypoproteinemia = mydata$Proteina_tot<4.2  # <4.2 g/dl 
-  mydata[which(mydata$age>=2),"is.Hypoproteinemia"] = mydata[which(mydata$age>=2),"Proteina_tot"]<6 #looser criteria if age>=2 
-  mydata$is.Hypoalbuminemia = mydata$Albumina<2  # <2 g/dl
-  mydata[which(mydata$age>=1),"is.Hypoalbuminemia"] = mydata[which(mydata$age>=1),"Albumina"]<3.5  #looser criteria if age>=1
   #vars used for DSS definition
   mydata$is.Estrechamiento = with(mydata,ifelse(Presion_Arterial_Sist-Presion_Arterial_Dias<=20,1,0))
-  mydata$is.coldclammy = with(mydata, ifelse(ExtremidadesFrias + Palidez + Sudoracion + Escalofrio >0 , 1, 0))
-  
+
   #age categories inspired by Hope's paper
   mydata$age_cat = cut(mydata$age, c(0,1,4,9,16), right=FALSE)
   #day of illness categories
   mydata$DaysSick_cat = cut(mydata$DaysSick, c(6,15), right=FALSE)
+  
+  mydata$is.FirstInfection = mydata$IR=="primary"
+  
+  mydata$is.serotype1 = mydata$PCR==1
+  mydata$is.serotype2 = mydata$PCR==2
+  mydata$is.serotype3 = mydata$PCR==3
   
   #define gallbladder enlargement to be > 2mm (reasonable?)
   #mydata$is.GallbladderEnlarged = mydata$Engrosamiento_mm>2
@@ -418,8 +411,24 @@ clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
   get_mismatches(colnames(clinical_hospitD_prelim),DxDSS_varsH,"in_data","needed") #we have all needed vars
  
   #DHF
-  #creates is.torniquete20plus, is.Hypoproteinemia, is.Hypoalbuminemia, is.thrombocytopenia, is.Estrechamiento, is.coldclammy, is.hypotension (among others)
+  #creates is.torniquete20plus, is.thrombocytopenia, is.Estrechamiento, is.hypotension (among others)
   temp = create_binary_variables(clinical_hospitD_prelim) 
+  
+  #this is the one categorical "general symptom" variable -- not in cohort data
+  temp$is.pulse_rapid = (temp$Pulso=="rapid")
+  temp$is.pulse_strong = (temp$Pulso=="strong")
+  temp[which(is.na(temp$Pulso)), "is.pulse_rapid"] = NA
+  temp[which(is.na(temp$Pulso)), "is.pulse_strong"] = NA
+  temp$is.pulse_danger = (temp$Pulso=="R" | temp$Pulso=="N") #danger if rapid or not palpable (#used in DSS classification)
+  
+  #these are defined according to appearance in definition of DHF -- not in cohort data
+  temp$is.Hypoproteinemia = temp$Proteina_tot<4.2  # <4.2 g/dl 
+  temp[which(temp$age>=2),"is.Hypoproteinemia"] = temp[which(temp$age>=2),"Proteina_tot"]<6 #looser criteria if age>=2 
+  temp$is.Hypoalbuminemia = temp$Albumina<2  # <2 g/dl
+  temp[which(temp$age>=1),"is.Hypoalbuminemia"] = temp[which(temp$age>=1),"Albumina"]<3.5  #looser criteria if age>=1
+  #DSS definition -- not in cohort data
+  temp$is.coldclammy = with(temp, ifelse(ExtremidadesFrias + Palidez + Sudoracion + Escalofrio >0 , 1, 0))
+  
   #note: sum will treat NAs as zeros.  So if all vars are NAs (which never happens), then the sum will be zero rather than NA
   temp$Hem1 = apply(temp[,c("PetequiasEspontaneas","Equimosis","Purpura","Hematoma")], 1, function(x) sum(x, na.rm=T)>0)
   temp$Hem2 = apply(temp[,c("Venopuncion","Hipermenorrea","Vaginal","Subconjuntival","Hemoptisis","Nariz","Encias")], 1, function(x) sum(x, na.rm=T)>0) # Menorrhagia, vaginal bleeding, subconjunctival bleeding, hemoptysis, epistaxis, or gingivorrhagia
@@ -448,13 +457,13 @@ clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
   outcomes_hospitD$CareLevelFinal = substr(outcomes_hospitD$CareLevelFinal, start=11, stop=12) #change "Categoria 1", "Categoria 2", "Categoria 3" to "1", "2", "3"
   #reformat the sample ID variable so that it is "ID" followed by 4-digit character variable
   outcomes_hospitD$code = apply(X=outcomes_hospitD, MARGIN = 1, FUN=fcode, var="code")
-  names(names(outcomes_hospitD)[names(outcomes_hospitD)=="WHOFinal4cat"] <- "test_WHOFinal4cat")
   #merge with other cleaned hospital data 
-  clinical_hospitD_clean = merge(outcomes_hospitD[,c("code","Manejo","CareLevelFinal","test_WHOFinal4cat","WHORevisedFinal","CareLevel12h","WHO12hr4cat","WHORevised12h")], 
+  clinical_hospitD_clean = merge(outcomes_hospitD[,c("code","Manejo","CareLevelFinal","WHOFinal4cat","WHORevisedFinal","CareLevel12hr","WHO12hr4cat","WHORevised12hr")], 
                                  temp, by="code", all.y=T)
-  tabletot(clinical_hospitD_clean, "ClasificacionFinal", "test_WHOFinal4cat", useNA="always") #sanity check.  Only one mismatch.
+  tabletot(clinical_hospitD_clean, "ClasificacionFinal", "WHOFinal4cat", useNA="always") #sanity check.  Only one mismatch.
   tabletot(clinical_hospitD_clean, "WHO24hr4cat", "WHO12hr4cat", useNA="always") #not a totally terrible match (but misaligned in both directions)
   tabletot(clinical_hospitD_clean, "WHO24hr4cat", "ClasificacionFinal") #sample size for predicting severe dengue
+  clinical_hospitD_clean$WHOFinal4cat = NULL #remove to avoid confusion (will produce it later using ClasificacionFinal and DENV indicator)
   
   # WHO revised classification for first 24 hr data
   #If [Dolor_Abdominal] = Yes or [Vomito]  = Yes or [Ascites, Plamsa leakage or  Edema] = Yes or [Mucosal hemorrhage] = Yes 
@@ -545,21 +554,31 @@ clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
   table(clinical_cohortD_clean$Hipermenorrea)
   table(clinical_cohortD_clean$Hemoconcentracion)
   
+  temp = create_binary_variables(clinical_cohortD_clean) 
+  
   #do we have varibles needed to determine DHF/DSS in first 24 hrs?  No.
   get_mismatches(colnames(clinical_cohortD_clean),DxDHF_varsH,"in_data","needed") #still needed: "Proteina_tot","Albumina","Purpura","Hematoma","Venopuncion","Vaginal","Hemoptisis","Derrame_","Ascitis","Edema_"
   get_mismatches(colnames(clinical_cohortD_clean),DxDSS_varsH,"in_data","needed") #still needed: "Sudoracion", "Escalofrio"
   
-  #add additional outcome indicators
-  all_symptomatic = readWorksheetFromFile(paste(clinical_inputsDir,"all_symptomatic_2004_2014_classification_v4.xlsx", sep=""), sheet=1) #609 obs
+  #add additional outcome indicators (new WHO classifications and level of care)
+  all_symptomatic = readWorksheetFromFile(paste(clinical_inputsDir,"all_symptomatic_2004_2014_classification_v4.xlsx", sep=""), sheet=1) #609 obs (all the DENV positive patients)
   all_symptomatic["code"] = apply(X=all_symptomatic, MARGIN = 1, FUN=fcode, var="Codigo")
   table(all_symptomatic$OMSTradicional, all_symptomatic$Res_Final) #only 44 patients diagnosed as "DHF/DSS"
   table(all_symptomatic$OMSTradicional, all_symptomatic$Hospitalizado) #all DHF and DSS patients were hospitalized
   table(all_symptomatic[which(all_symptomatic$Hospitalizado=="N"), "Res_Final"], useNA="always") #additional DENV patients in cohort but not hospit
+  #level of care
+  all_symptomatic$CareLevelFinal = substr(all_symptomatic$nivelcuidado, start=11, stop=12) #change "Categoria 1", "Categoria 2", "Categoria 3" to "1", "2", "3"
+  all_symptomatic[which(all_symptomatic$Hospital=="N"),"CareLevelFinal"] = "1" #Lionel says non-hospitalized patients should all be considered level of care 1
+  #revised WHO final diagnosis
+  names(all_symptomatic)[names(all_symptomatic)=="OMSNueva"] <- "WHORevisedFinal" #rename variable
+  all_symptomatic[which(is.na(all_symptomatic$WHORevisedFinal)),"WHORevisedFinal"] = "Caso sin datos de alarma" #if NA, assume lowest category (should confirm this)
+  all_symptomatic[which(all_symptomatic$WHORevisedFinal==""),"WHORevisedFinal"] = "Caso sin datos de alarma" #if empty, assume lowest category
+  clinical_cohortD_clean = merge(temp, all_symptomatic[c("code","WHORevisedFinal","CareLevelFinal")], by="code", all.x=T)
   
   #examine potential of cohort data (count of DENV Negativo and Positivo)
   casos = read.delim(paste(clinical_inputsDir,"suspected_dengue_cohorte_2004_2015.txt", sep=""), header=TRUE, nrows=10000) #5372 obs
   casos["code"] = apply(X=casos, MARGIN = 1, FUN=fcode, var="Codigo")
-  table(casos$ResFinal.Dengue) #Lionel says to only consider Negativo and Positivo patients
+  table(casos$ResFinal.Dengue) #Lionel says to only consider Negativo (3948) and Positivo (610) patients
   
   
   ###############################################################################

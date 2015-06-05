@@ -1,6 +1,7 @@
 
 ###############################################################################
 ## Process mzML data -- build arrays and graphs (after converting .d files)  ##
+#######  This code is most up-to-date version of binned array building ########
 ###############################################################################
 
 # This line tells python to compile the .pyx code before running

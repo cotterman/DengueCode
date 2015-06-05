@@ -17,7 +17,7 @@ library(gtools) #enables smartbind
 #library(SuperLearner) #the CRAN version will sometimes throw errors
 library(devtools)
 #install_github("ecpolley/SuperLearner") #this version corrects bug in CRAN version (last downloaded on 2-6-2015)
-#library(SuperLearner) #will load whichever SuperLearner was last installed
+library(SuperLearner) #will load whichever SuperLearner was last installed
 sourceDir <- function(path, trace = TRUE, ...) {
   for (nm in list.files(path, pattern = "\\.[RrSsQq]$")) {
     if(trace) cat(nm,":")           
@@ -91,10 +91,12 @@ source(paste(codeDir,"create_data_for_analysis.R",sep=""))
 ###############################################################################
 
 # this data was created in "create_data_for_analysis.R" - contains all clinical data (n=1624)
+load(paste(outputsDir,"clin24_full_clean.RData", sep="")) #loads clinical_full_clean
 load(paste(outputsDir,"clinical_full_clean.RData", sep="")) #loads clinical_full_clean
 load(paste(outputsDir,"clinical_D1_clean.RData", sep="")) #loads clinical_D1_clean
 
 # this data was created in "create_data_for_analysis.R" - contains all clinical data with imputed values
+load(paste(outputsDir,"clin24_full_wImputedRF1.RData", sep="")) #loads clin_full_wImputedRF1
 load(paste(outputsDir,"clin_full_wImputedRF1.RData", sep="")) #loads clin_full_wImputedRF1
 
 # this data was created in "create_data_for_analysis.R" - contains mass hunter LCMS combined with clinical
@@ -133,6 +135,8 @@ source(paste(codeDir,"prediction_functions_v2.R",sep="")) #use debugSource here 
 covarlist_all = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
                                     eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
                                     XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
+write(covarlist_all, paste(outputsDir,"covarlist_all.txt", sep=""),sep = ",")
+
 covarlist_CohortRestrict = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
                                                eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
                                                XD=clinical_full_clean, restrict_to_cohort_vars=T, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)

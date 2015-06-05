@@ -29,7 +29,7 @@ resp_D1D2 = rbind(respD1_filter50n[,commonvars], respD2_filter50n[,commonvars])
 #Get list of patient ID codes that are present in LCMS data (Nicaragua serum R1 and R2, urine, and saliva)
 IDs_in_resp_all = get_IDs_in_common(resp_D1D2, respD3_filter50n, respD5_filter50n)
 save(IDs_in_resp_all, file=paste(outputsDir,"IDs_in_resp_all.RData", sep="")) #for future access
-
+load(paste(outputsDir,"IDs_in_resp_all.RData", sep="")) #loads IDs_in_resp_all
 
 ###############################################################################
 ########################### Clean the clinical data ###########################
@@ -42,7 +42,6 @@ clin24_full = clean_clin24_data(clinic_varsD, IDs_in_resp_all) #1726 observation
 clin24_full_clean = clin24_full[which(!is.na(clin24_full$WHOFinal4cat)),]
 
 #keep only clinical observations for which we have LC-MS data
-load(paste(outputsDir,"IDs_in_resp_all.RData", sep="")) #loads IDs_in_resp_all
 clin24_restricted_clean = merge(IDs_in_resp_all, clin24_full_clean, by=c("code","Study"), all=FALSE)
 
 #keep only clinical observations for batch 1 LCMS data
@@ -50,6 +49,7 @@ clin24_D1_clean = merge(respD1_filter50n[,c("code","Study")], clin24_full_clean,
 
 ## Write this clinical data to file for easy future access ##
 save(clin24_full_clean, file=paste(outputsDir,"clin24_full_clean.RData", sep=""))
+write.table(clin24_full_clean, paste(outputsDir,"clin24_full_clean.txt", sep=""), sep="\t")
 save(clin24_restricted_clean, file=paste(outputsDir,"clin24_restricted_clean.RData", sep=""))
 save(clin24_D1_clean, file=paste(outputsDir,"clin24_D1_clean.RData", sep=""))
 
@@ -71,10 +71,15 @@ varlist = get_clinic_var_list(clinic_varsD, outcome="either",
                               XD=clin24_full_clean, restrict_to_cohort_vars=F, 
                               restrict_to_hospit_vars=T,UltraX=T, BloodLab=T)
 #impute missing values and add indicator for imputation (todo: add SL as method option)
-clin24_full_wImputedRF1 = impute_missings(XD=clin24_full_clean, vars_to_impute=varlist, 
+clin24_full_wImputedRF1_prelim = impute_missings(XD=clin24_full_clean, vars_to_impute=varlist, 
                                         predictor_vars_prelim=varlist, exclude_miss_vars=T, method="RF")
+#note: since missings were imputed for categoricals but not binary equivalents,
+  #must create these variables now rather than using the ones already in data
+clin24_full_wImputedRF1 = create_binary_variables(clin24_full_wImputedRF1_prelim)
+clin24_full_wImputedRF1$is.pulse_danger = (clin24_full_wImputedRF1$Pulso=="rapid" | clin24_full_wImputedRF1$Pulso=="not palpable")
 #write to file
 save(clin24_full_wImputedRF1, file=paste(outputsDir,"clin24_full_wImputedRF1.RData", sep=""))
+write.table(clin24_full_wImputedRF1, paste(outputsDir,"clin24_full_wImputedRF1.txt", sep=""), sep="\t")
 
 #verify missings have been imputed
   #sum(is.na(clin_full_wImputedRF1[varlist])) #should be zero
