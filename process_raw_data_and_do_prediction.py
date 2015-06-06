@@ -15,7 +15,6 @@ import rpy2.robjects as robj
 from rpy2.robjects.numpy2ri import numpy2ri #submodules not imported automatically
 #the following import will allow me to import arbitrary R code as a package
 from rpy2.robjects.packages import SignatureTranslatedAnonymousPackage
-
 import os, sys
 
 import cPickle as pickle
