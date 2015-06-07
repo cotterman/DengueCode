@@ -15,6 +15,7 @@ import time
 
 import numpy as np
 import pandas as pd
+print "Version of pandas: " , pd.__version__
 from pandas.core.categorical import Categorical
 import matplotlib.pyplot as plt
 
@@ -25,6 +26,8 @@ from scipy import stats
 from scipy.ndimage import imread
 import scipy.ndimage as ndi
 
+import sklearn
+print "Version of sklearn: " , sklearn.__version__
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
 from sklearn import cross_validation
 from sklearn.cross_validation import cross_val_score
@@ -36,7 +39,9 @@ from sklearn import svm, linear_model, neighbors
 
 np.random.seed(100)
 
-inputsDir = "/home/carolyn/dengue_data_and_results_local/intermediate_data/"
+#inputsDir = "/home/carolyn/dengue_data_and_results_local/intermediate_data/" #home PC
+#inputsDir = "~/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC, diff login
+inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
 
 VERBOSE = True
 def log_statement(statement):
@@ -80,17 +85,55 @@ def get_predictor_list(file_name, outcome):
     return(predictors)
 
 
-def get_predictions_svm(data, outcome, predictors):
+def get_predictions_svm(X, y):
     #note: svm does not work with categorical data, only numeric and boolean data types
 
     clf = svm.SVC(probability=True)
-    clf.fit(data[predictors], data[outcome])
-    fitted_values = clf.predict(data[predictors])
+    clf.fit(X, y)
+    fitted_values = clf.predict_proba(X)[:, 0]
+    print clf.classes_ #returns array containing order classes appear in fitted_values (todo)
     return fitted_values
 
-def get_performance_measures(actual, predicted):
-    MSE = sum((actual.astype(int) - predicted)**2)
-    return(MSE)
+def measure_performance(y, pred_prob, threshold):
+    """
+        Obtain measures that depend on specified classification threshold
+    """
+    pred_y = (pred_prob>threshold)
+    true_positives_count = sum(np.array([sum(x) for x in zip(y, pred_y)])==2)
+    sensitivity = true_positives_count / sum(y==1) # (correctly predicted 1s) / (tot 1s)
+    true_negatives_count = sum(np.array([sum(x) for x in zip(y, pred_y)])==0)
+    specificity = true_negatives_count / sum(y==0) # (correctly predicted 0s) / (tot 0s)
+    PPV = true_positives_count / sum(pred_y==1) # (correctly predicted 1s) / tot predicted 1s
+    NPV = true_negatives_count / sum(pred_y==0) # (correctly predicted 0s) / tot predicted 0s
+    errRate = sum(pred_y != y)
+    values = [sensitivity, specificity, PPV, NPV, errRate]
+    names = ["sensitivity", "specificity", "PPV", "NPV", "errRate"]
+    measures = zip(names, values)
+    return measures
+
+def get_performance_vals(y, pred_prob):
+    """
+        Use actual y and predicted probs to get performance measures
+    """
+    lowest_errRate = 1
+    #for measures that depend on threshold, choose threshold 
+        #that minimizes errRate
+    #todo: use MSE when errRate has ties
+    for threshold in np.arange(0, 1.1, .1):
+        performance_vals = measure_performance(y, pred_prob, threshold)
+        print "Threshold value: " , threshold
+        print performance_vals
+        if performance_vals[-1][1] < lowest_errRate:
+            lowest_err = performance_vals[-1][1]
+            best_performance = performance_vals
+            best_threshold = threshold
+    #meaures that are independent of threshold
+    AUC = metrics.roc_auc_score(y, pred_prob)
+    MSE = sum((y - pred_prob)**2)
+    best_performance.append(("AUC", AUC))
+    best_performance.append(("MSE", MSE))
+    best_performance.append(("threshold", best_threshold))
+    return best_performance
 
 def convert_stings_to_categories(df):
     """
@@ -118,7 +161,8 @@ def main():
 
     #obtain list of variables to use in prediction
     predictors = get_predictor_list("covarlist_all.txt", outcome)
-    print "Predictors to use:\n" , predictors
+    #predictors = ["is.female", "Temperatura","Tos","Albumina"] #for testing
+    #print "Predictors to use:\n" , predictors
 
     #create pandas dataframe with data that was cleaned in R
     df = pd.read_csv(inputsDir + "clin24_full_wImputedRF1.txt", sep='\t', 
@@ -127,37 +171,48 @@ def main():
     df[["is.female"]] = (df[["Sexo"]]=="female") #need this to be True/False binary
     print "Number of rows in dataframe: " , df.shape[0], "\n"
     #print "Column names in dataframe: " , list(df.columns.values), "\n"  
-    X = df[predictors] #include only variables we will use 
-    y = df[outcome]
-    #X2, y2=datasets.make_classification(n_samples=88, n_features=95) #generate toy data for testing
+    X = df[predictors].values #include only variables we will use and convert to np array 
+    y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
+    #X, y=datasets.make_classification(n_samples=88, n_features=95) #generate toy data for testing
+
+    #test functions with just 1 algorithm
+    pred_prob = get_predictions_svm(X, y)
+    #print zip(y, pred_prob)
+    print get_performance_vals(y, pred_prob)    
 
     #run Super Learner
     RF = RandomForestClassifier()
-    #logitL1=linear_model.LogisticRegressionCV(penalty='l1', solver='liblinear') 
+    logitL1=linear_model.LogisticRegression(penalty='l1', solver='liblinear') 
         #todo: explore l1 path options for optimizing penalty coefficient (e.g., l1_min_c)
-    #logitL2=linear_model.RidgeClassifierCV(normalize=True) 
-    #nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
-    #gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
+    logitL2=linear_model.RidgeClassifier(normalize=True) #outputs class predictions but not probs
+    nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
+    gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
     adaBoost=AdaBoostClassifier() 
-    #myLDA = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
-    #myQDA = QDA() 
-    #svm1=svm.SVC(kernel='rbf', probability=True)     
-    #svm2=svm.SVC(kernel='poly', probability=True)
-    #svmL2=svm.LinearSVC(penalty='l2') #penalized linear support vector classification
+    myLDA = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
+    myQDA = QDA() 
+    svm1=svm.SVC(kernel='rbf', probability=True)     
+    #svm2=svm.SVC(kernel='poly', probability=True) #much too slow!
+    svmL2=svm.LinearSVC(penalty='l2') #penalized linear support vector classification
     #todo: spectral clustering classifier?
     #todo: write a means classifier myself
-    lib=[svm1, svm2]
-    libnames=["SVM-rbf", "SVM-poly"]
-    #lib=[RF, logitL1, logitL2, nn, gradB_dev, adaBoost, myLDA, myQDA, svm1, svm2, svmL2]
+    #lib=[RF, adaBoost]
+    lib=[RF, logitL1, logitL2, nn, gradB_dev, adaBoost, myLDA, myQDA, svm1, svmL2]
     #libnames=["RF", "LogitL1", "LogitL2", "Nearest Neighbor","Gradient Boosting",
-    #           "AdaBoost", "LDA", "QDA", "SVM-rbf", "SVM-poly", "SVM-L2"]
+    #           "AdaBoost", "LDA", "QDA", "SVM-rbf", "SVM-L2"]
+	
+    #sl=SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+    #sl.fit(X, y)
+    #sl.summarize()
+    #print "actual and predicted values"
+    #print type(sl.y_pred_cv)
+    #print sl.y_pred_cv.shape #dimension is n (#obs) by k (#algorithms)
+    #print sl.y_pred_cv.shape
+    start_time_cvSL = time.time()
+    #cv_superlearner(sl, X, y, K=2, stratifyCV=True) #currently only returns risks_cv np array
+    log_statement("cvSL execution time: {} minutes".format(
+        (time.time() - start_time_cvSL)/60. ) ) 
 
-    sl=SuperLearner(lib, libnames, loss="nloglik", K=2, stratifyCV=True)
-    sl.fit(X, y)
-    sl.summarize()
-    cv_superlearner(sl, X, y, K=2)
-
-    log_statement("Total execution time, prediction program: {} minutes".format(
+    log_statement("Total execution time: {} minutes".format(
         (time.time() - start_time_overall)/60. ) ) 
 
 if __name__ == '__main__':
