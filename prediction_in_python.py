@@ -15,7 +15,7 @@ import time
 
 import numpy as np
 import pandas as pd
-print "Version of pandas: " , pd.__version__
+print "Version of pandas: " , pd.__version__ #should be v0.16.1
 from pandas.core.categorical import Categorical
 import matplotlib.pyplot as plt
 
@@ -27,21 +27,35 @@ from scipy.ndimage import imread
 import scipy.ndimage as ndi
 
 import sklearn
-print "Version of sklearn: " , sklearn.__version__
+print "Version of sklearn: " , sklearn.__version__ #should be v0.16.1
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
 from sklearn import cross_validation
-from sklearn.cross_validation import cross_val_score
+from sklearn.cross_validation import cross_val_score, cross_val_predict
 from sklearn import grid_search, metrics, datasets
 from sklearn.lda import LDA
 from sklearn.qda import QDA
 from sklearn import svm, linear_model, neighbors
 #from sklearn.linear_model import LogisticRegressionCV
 
+import pdb #debugger
+
 np.random.seed(100)
 
 #inputsDir = "/home/carolyn/dengue_data_and_results_local/intermediate_data/" #home PC
-#inputsDir = "~/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC, diff login
+#inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC, diff login
 inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
+
+class RidgeClassifier(linear_model.RidgeClassifier):
+    def predict_proba(self, X): 
+        #pdb.set_trace()
+        coefs = self.coef_
+        print type(coefs), coefs
+        z = np.dot(X, np.transpose(coefs))
+        print type(z)
+        print z.shape
+        # return the predicted probabilities (of getting outcome 1)
+        predict_proba = 1.0 / (1.0 + np.exp(-z))
+        return predict_proba[:,0]
 
 VERBOSE = True
 def log_statement(statement):
@@ -65,7 +79,6 @@ def get_predictor_list(file_name, outcome):
     #drop variables that are not appropriate for prediction type
     #if outcome=="is.DHF_DSS":
         
-
     #use binary equivalents of the categorical predictors
         #Torniquete -- less than 20 vs. 20+ = is.torniquete20plus
         #Pulso  -- strong or moderate vs. rapid or not palpable = is.pulse_danger
@@ -91,6 +104,7 @@ def get_predictions_svm(X, y):
     clf = svm.SVC(probability=True)
     clf.fit(X, y)
     fitted_values = clf.predict_proba(X)[:, 0]
+    #preds_cv = cross_val_predict(clf, X, y)
     print clf.classes_ #returns array containing order classes appear in fitted_values (todo)
     return fitted_values
 
@@ -98,14 +112,21 @@ def measure_performance(y, pred_prob, threshold):
     """
         Obtain measures that depend on specified classification threshold
     """
-    pred_y = (pred_prob>threshold)
-    true_positives_count = sum(np.array([sum(x) for x in zip(y, pred_y)])==2)
-    sensitivity = true_positives_count / sum(y==1) # (correctly predicted 1s) / (tot 1s)
-    true_negatives_count = sum(np.array([sum(x) for x in zip(y, pred_y)])==0)
-    specificity = true_negatives_count / sum(y==0) # (correctly predicted 0s) / (tot 0s)
-    PPV = true_positives_count / sum(pred_y==1) # (correctly predicted 1s) / tot predicted 1s
-    NPV = true_negatives_count / sum(pred_y==0) # (correctly predicted 0s) / tot predicted 0s
-    errRate = sum(pred_y != y)
+    pred_y = (pred_prob>threshold).astype(int) #turn predicted probs into 0/1 predicted value
+    #counts to use in performance measures
+    true_positives_count = (np.absolute(y + pred_y - 2) < 1e-6).astype(int).sum()
+    positives_count = (np.absolute(y-1)<1e-6).astype(int).sum()
+    predicted_positives_count = sum(pred_y==1)
+    true_negatives_count = ((np.absolute(y + pred_y)) < 1e-6).astype(int).sum()
+    negatives_count = (np.absolute(y)<1e-6).astype(int).sum()
+    predicted_negatives_count = sum(pred_y==0)
+    error_count = (np.absolute(pred_y - y) > 1e-6).astype(int).sum()
+    #calculate performance measures
+    sensitivity = true_positives_count.astype(float)/ positives_count
+    specificity = true_negatives_count.astype(float) / negatives_count
+    PPV = true_positives_count.astype(float) / predicted_positives_count 
+    NPV = true_negatives_count.astype(float) / predicted_negatives_count
+    errRate = error_count.astype(float) / y.shape[0]
     values = [sensitivity, specificity, PPV, NPV, errRate]
     names = ["sensitivity", "specificity", "PPV", "NPV", "errRate"]
     measures = zip(names, values)
@@ -115,16 +136,17 @@ def get_performance_vals(y, pred_prob):
     """
         Use actual y and predicted probs to get performance measures
     """
-    lowest_errRate = 1
-    #for measures that depend on threshold, choose threshold 
-        #that minimizes errRate
-    #todo: use MSE when errRate has ties
+    lowest_errRate = 1.
+    #For measures that depend on threshold, choose threshold that minimizes errRate.  
+    #Take lowest threshold when multiple thresholds give same minimum errRate.
+        #Thus, we prioritize sensitivity over specificity, which is appropriate.
     for threshold in np.arange(0, 1.1, .1):
+        #print "Threshold value: " , threshold
         performance_vals = measure_performance(y, pred_prob, threshold)
-        print "Threshold value: " , threshold
-        print performance_vals
+        #print performance_vals
         if performance_vals[-1][1] < lowest_errRate:
-            lowest_err = performance_vals[-1][1]
+            #print "current error: " , performance_vals[-1][1]
+            lowest_errRate = performance_vals[-1][1]
             best_performance = performance_vals
             best_threshold = threshold
     #meaures that are independent of threshold
@@ -171,20 +193,27 @@ def main():
     df[["is.female"]] = (df[["Sexo"]]=="female") #need this to be True/False binary
     print "Number of rows in dataframe: " , df.shape[0], "\n"
     #print "Column names in dataframe: " , list(df.columns.values), "\n"  
-    X = df[predictors].values #include only variables we will use and convert to np array 
+    #import pdb 
+    #pdb.set_trace()
+    X = df[predictors].astype(float).values #include only vars we will use and convert to np array 
     y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
     #X, y=datasets.make_classification(n_samples=88, n_features=95) #generate toy data for testing
 
     #test functions with just 1 algorithm
     pred_prob = get_predictions_svm(X, y)
     #print zip(y, pred_prob)
-    print get_performance_vals(y, pred_prob)    
+    print "Performance results: " , get_performance_vals(y, pred_prob)    
 
     #run Super Learner
     RF = RandomForestClassifier()
     logitL1=linear_model.LogisticRegression(penalty='l1', solver='liblinear') 
         #todo: explore l1 path options for optimizing penalty coefficient (e.g., l1_min_c)
-    logitL2=linear_model.RidgeClassifier(normalize=True) #outputs class predictions but not probs
+    logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
+    logitL2.fit(X,y)
+    pred_prob2 = logitL2.predict_proba(X)
+    #print zip(pred_prob2, y)
+    print "Performance results: " , get_performance_vals(y, pred_prob2)
+
     nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
     gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
     adaBoost=AdaBoostClassifier() 
