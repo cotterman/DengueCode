@@ -8,6 +8,7 @@ import sys
 sys.path.append('../SuPyLearner/supylearner')
 import core #this is the main SuPyLearner code
 from core import SuperLearner, cv_superlearner
+from cross_val_utils import cross_val_predict_proba
 
 import pickle
 import warnings
@@ -30,6 +31,7 @@ import sklearn
 print "Version of sklearn: " , sklearn.__version__ #should be v0.16.1
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
 from sklearn import cross_validation
+import sklearn.cross_validation as cv
 from sklearn.cross_validation import cross_val_score, cross_val_predict
 from sklearn import grid_search, metrics, datasets
 from sklearn.lda import LDA
@@ -45,22 +47,20 @@ np.random.seed(100)
 #inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC, diff login
 inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
 
-class RidgeClassifier(linear_model.RidgeClassifier):
-    def predict_proba(self, X): 
-        #pdb.set_trace()
-        coefs = self.coef_
-        print type(coefs), coefs
-        z = np.dot(X, np.transpose(coefs))
-        print type(z)
-        print z.shape
-        # return the predicted probabilities (of getting outcome 1)
-        predict_proba = 1.0 / (1.0 + np.exp(-z))
-        return predict_proba[:,0]
-
 VERBOSE = True
 def log_statement(statement):
     if VERBOSE: print statement
 
+
+class RidgeClassifier(linear_model.RidgeClassifier):
+    def predict_proba(self, X): 
+        coefs = self.coef_
+        z = np.dot(X, np.transpose(coefs))
+        predict_proba1 = 1.0 / (1.0 + np.exp(-z)) #probability of getting 1
+        predict_proba0 = 1.0 - predict_proba1     #probability of getting 0
+        # return the predicted probabilities in same format as other learners do
+        predict_proba = np.hstack([predict_proba0,predict_proba1])
+        return predict_proba
 
 def get_predictor_list(file_name, outcome):
     """
@@ -103,7 +103,7 @@ def get_predictions_svm(X, y):
 
     clf = svm.SVC(probability=True)
     clf.fit(X, y)
-    fitted_values = clf.predict_proba(X)[:, 0]
+    fitted_values = clf.predict_proba(X)
     #preds_cv = cross_val_predict(clf, X, y)
     print clf.classes_ #returns array containing order classes appear in fitted_values (todo)
     return fitted_values
@@ -122,7 +122,7 @@ def measure_performance(y, pred_prob, threshold):
     predicted_negatives_count = sum(pred_y==0)
     error_count = (np.absolute(pred_y - y) > 1e-6).astype(int).sum()
     #calculate performance measures
-    sensitivity = true_positives_count.astype(float)/ positives_count
+    sensitivity = true_positives_count.astype(float) / positives_count
     specificity = true_negatives_count.astype(float) / negatives_count
     PPV = true_positives_count.astype(float) / predicted_positives_count 
     NPV = true_negatives_count.astype(float) / predicted_negatives_count
@@ -197,12 +197,16 @@ def main():
     #pdb.set_trace()
     X = df[predictors].astype(float).values #include only vars we will use and convert to np array 
     y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
+    #take subset in order to test _class issue with klearn outputs
+    X = X[1:,]
+    y = y[1:]
+    print "Actual outcomes: " , y[:10]
     #X, y=datasets.make_classification(n_samples=88, n_features=95) #generate toy data for testing
 
     #test functions with just 1 algorithm
-    pred_prob = get_predictions_svm(X, y)
+    pred_prob = get_predictions_svm(X, y)[:, 0] #says class order is 0,1 but 0th element is better 
     #print zip(y, pred_prob)
-    print "Performance results: " , get_performance_vals(y, pred_prob)    
+    print "\nPerformance results: " , get_performance_vals(y, pred_prob)    
 
     #run Super Learner
     RF = RandomForestClassifier()
@@ -210,9 +214,13 @@ def main():
         #todo: explore l1 path options for optimizing penalty coefficient (e.g., l1_min_c)
     logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
     logitL2.fit(X,y)
-    pred_prob2 = logitL2.predict_proba(X)
+    pred_prob2 = logitL2.predict_proba(X)[:, 1]
     #print zip(pred_prob2, y)
-    print "Performance results: " , get_performance_vals(y, pred_prob2)
+    print "\nPerformance results: " , get_performance_vals(y, pred_prob2)
+    #cross-validation module
+    cvtype = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
+    ridge_preds = cross_val_predict_proba(logitL2, X, y, cvtype) #works
+    print "Ridge cv predictions: ", ridge_preds[:10]
 
     nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
     gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
@@ -229,16 +237,23 @@ def main():
     #libnames=["RF", "LogitL1", "LogitL2", "Nearest Neighbor","Gradient Boosting",
     #           "AdaBoost", "LDA", "QDA", "SVM-rbf", "SVM-L2"]
 	
-    #sl=SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-    #sl.fit(X, y)
-    #sl.summarize()
-    #print "actual and predicted values"
-    #print type(sl.y_pred_cv)
-    #print sl.y_pred_cv.shape #dimension is n (#obs) by k (#algorithms)
-    #print sl.y_pred_cv.shape
+    #test
+    for est in lib:
+        est.fit(X, y)
+        print est.classes_ #all look the same ( [0, 1] )
+
+    sl=SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+    sl.fit(X, y)
+    sl.summarize()
+    cvtype = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
+    SL_preds = cross_val_predict(sl, X, y, cvtype) #works
+    print "SL cv predictions: " , SL_preds[:10]
+    #print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
+    #print sl.y_pred_cv #provides predicted probabilities (not just 0/1) when possible
     start_time_cvSL = time.time()
+
     #cv_superlearner(sl, X, y, K=2, stratifyCV=True) #currently only returns risks_cv np array
-    log_statement("cvSL execution time: {} minutes".format(
+    log_statement("\ncvSL execution time: {} minutes".format(
         (time.time() - start_time_cvSL)/60. ) ) 
 
     log_statement("Total execution time: {} minutes".format(
