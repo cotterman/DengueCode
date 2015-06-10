@@ -157,6 +157,57 @@ def get_performance_vals(y, pred_prob):
     best_performance.append(("threshold", best_threshold))
     return best_performance
 
+def get_cvAUC_with_CIs(y, pred_prob, cv_gen, confidence=0.95): 
+    """
+    Parameters
+        y : array containing int 0s and 1s.  These are the true class labels.
+        y_pred_prob: array containing predicted probabilities that y is 1. 
+        cv_gen : cross-validation generator.  
+             Should correspond to that which was used to generate y_pred_prob
+        confidence: indicates desired coverage of confidence interval. 
+                    Default = 0.95
+    Returns
+        list(cvAUC, se, ci, confidence)
+    """    
+    #Convert y array to array of ints if not already (so avoid rounding problems)
+    if y.dtype=='int': y = y.astype(float)
+    #create inverse probability weights to be used in ci.cvAUC calc
+    n_obs = y.shape[0] #tot number of observations
+    positives_count = (np.absolute(y-1)<1e-6).astype(int).sum()
+    negatives_count = (np.absolute(y)<1e-6).astype(int).sum()
+    w1 = 1.0 / (positives_count / float(n_obs))
+    w0 = 1.0 / (negatives_count / float(n_obs)) 
+    tracker = 0
+    K = cv_gen.n_folds
+    AUCs = np.zeros(K, dtype=float)
+    ICvals = np.zeros(n_obs, dtype=float) #an array to hold influence curve values
+    for train_index, test_index in cv_gen:
+        y_test = y[test_index]
+        pred_test = pred_prob[test_index]
+        n_row = y_test.shape[0] #number of obs in current test set
+        n_pos = (y_test==1).sum() #number of positive obs in test set       
+        n_neg = n_row - n_pos #number of neg. obs in test set
+        AUCs[tracker] = metrics.roc_auc_score(y_test, pred_test)
+        for index in test_index:
+            #when current y==1, count obs in test set for which y==0 and pred_y<pred_y_current
+            if y[index]==1:
+                fracNegYsWithSmallerPreds = np.logical_and(
+                    y_test==0, pred_test < pred_prob[index]).astype(int).sum() / float(n_neg)
+                ICvals[index] = w1 * (fracNegYsWithSmallerPreds - AUCs[tracker])
+            #when current y==0, count obs in test set for which y==1 and pred_y>pred_y_current
+            if y[index]==0:
+                fracPosYsWithLargerPreds = np.logical_and(
+                    y_test==1, pred_test > pred_prob[index]).astype(int).sum() / float(n_pos)
+                ICvals[index] = w0 * (fracPosYsWithLargerPreds - AUCs[tracker])
+        tracker += 1
+    sighat2 = (ICvals**2).mean() / float(K)
+    se = (sighat2 / n_obs)**.5
+    cvAUC = AUCs.mean()
+    z = stats.norm.ppf(.95)
+    ci_cvAUC = [max(cvAUC - (z*se), 0), min(cvAUC + (z*se), 1)] #truncate CI at [0,1] 
+    return_list = [cvAUC, se, ci_cvAUC, confidence] #same return list as corresponding R package 
+    return return_list
+
 def convert_stings_to_categories(df):
     """
         Converts all variables of type "object" to type "category"
@@ -197,59 +248,60 @@ def main():
     #pdb.set_trace()
     X = df[predictors].astype(float).values #include only vars we will use and convert to np array 
     y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
-    #take subset in order to test _class issue with klearn outputs
-    X = X[1:,]
-    y = y[1:]
     print "Actual outcomes: " , y[:10]
     #X, y=datasets.make_classification(n_samples=88, n_features=95) #generate toy data for testing
 
     #test functions with just 1 algorithm
-    pred_prob = get_predictions_svm(X, y)[:, 0] #says class order is 0,1 but 0th element is better 
+    #pred_prob = get_predictions_svm(X, y)[:, 0] #says class order is 0,1 but 0th element is better 
     #print zip(y, pred_prob)
-    print "\nPerformance results: " , get_performance_vals(y, pred_prob)    
-
-    #run Super Learner
-    RF = RandomForestClassifier()
-    logitL1=linear_model.LogisticRegression(penalty='l1', solver='liblinear') 
-        #todo: explore l1 path options for optimizing penalty coefficient (e.g., l1_min_c)
+    #print "\nPerformance results using 0 index: " , get_performance_vals(y, pred_prob)
+    
     logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
     logitL2.fit(X,y)
-    pred_prob2 = logitL2.predict_proba(X)[:, 1]
-    #print zip(pred_prob2, y)
-    print "\nPerformance results: " , get_performance_vals(y, pred_prob2)
-    #cross-validation module
-    cvtype = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
-    ridge_preds = cross_val_predict_proba(logitL2, X, y, cvtype) #works
+    pred_prob = logitL2.predict_proba(X)[:, 1]
+    print "\nPerformance results: " , get_performance_vals(y, pred_prob)
+    cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
+    ridge_preds = cross_val_predict_proba(logitL2, X, y, cv_gen) #works
     print "Ridge cv predictions: ", ridge_preds[:10]
 
-    nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
-    gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
-    adaBoost=AdaBoostClassifier() 
-    myLDA = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
-    myQDA = QDA() 
-    svm1=svm.SVC(kernel='rbf', probability=True)     
-    #svm2=svm.SVC(kernel='poly', probability=True) #much too slow!
-    svmL2=svm.LinearSVC(penalty='l2') #penalized linear support vector classification
-    #todo: spectral clustering classifier?
-    #todo: write a means classifier myself
-    #lib=[RF, adaBoost]
-    lib=[RF, logitL1, logitL2, nn, gradB_dev, adaBoost, myLDA, myQDA, svm1, svmL2]
-    #libnames=["RF", "LogitL1", "LogitL2", "Nearest Neighbor","Gradient Boosting",
-    #           "AdaBoost", "LDA", "QDA", "SVM-rbf", "SVM-L2"]
-	
-    #test
-    for est in lib:
-        est.fit(X, y)
-        print est.classes_ #all look the same ( [0, 1] )
+    #get cvAUC confidence intervals based on the LeDell method
+    ci_cvAUC = get_cvAUC_with_CIs(y, pred_prob, cv_gen, confidence=0.95)
+    print "ci_cvAUC results: " , ci_cvAUC
 
-    sl=SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-    sl.fit(X, y)
-    sl.summarize()
-    cvtype = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
-    SL_preds = cross_val_predict(sl, X, y, cvtype) #works
-    print "SL cv predictions: " , SL_preds[:10]
-    #print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
-    #print sl.y_pred_cv #provides predicted probabilities (not just 0/1) when possible
+    #run Super Learner
+    if True==False:
+        RF = RandomForestClassifier()
+        logitL1=linear_model.LogisticRegression(penalty='l1', solver='liblinear') 
+            #todo: explore l1 path options for optimizing penalty coefficient (e.g., l1_min_c)
+        logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
+        nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
+        gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
+        adaBoost=AdaBoostClassifier() 
+        myLDA = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
+        myQDA = QDA() 
+        svm1=svm.SVC(kernel='rbf', probability=True)     
+        #svm2=svm.SVC(kernel='poly', probability=True) #much too slow!
+        svmL2=svm.LinearSVC(penalty='l2') #penalized linear support vector classification
+        #todo: spectral clustering classifier?
+        #todo: write a means classifier myself
+        #lib=[RF, adaBoost]
+        lib=[RF, logitL1, logitL2, nn, gradB_dev, adaBoost, myLDA, myQDA, svm1, svmL2]
+        #libnames=["RF", "LogitL1", "LogitL2", "Nearest Neighbor","Gradient Boosting",
+        #           "AdaBoost", "LDA", "QDA", "SVM-rbf", "SVM-L2"]
+        #test
+        for est in lib:
+            est.fit(X, y)
+            print est.classes_ #all look the same ( [0, 1] )
+        sl=SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+        sl.fit(X, y)
+        sl.summarize()
+        cvtype = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
+        SL_preds = cross_val_predict_proba(sl, X, y, cvtype) #works
+        print "SL cv predictions: " , SL_preds[:10]
+        print "\nPerformance results, SL: " , get_performance_vals(y, SL_preds)
+        print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
+        print "\nPerformance results, RF: " , get_performance_vals(y, sl.y_pred_cv[:,0])
+
     start_time_cvSL = time.time()
 
     #cv_superlearner(sl, X, y, K=2, stratifyCV=True) #currently only returns risks_cv np array
