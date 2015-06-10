@@ -30,6 +30,8 @@ test = t$Fecha_Nac.y - t$Fecha_Nac.x
 table(test) #perfect match
 test = t$FTM - t$Fecha_Estudio
 table(test) #different for 4 out of 1650 obs; identical for others
+test = t$PrimeraOrinaDia - t$FIF
+table(test, useNA="always")
 
 
 ## Clinical History ##  

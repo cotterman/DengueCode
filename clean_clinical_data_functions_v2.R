@@ -292,49 +292,17 @@ create_binary_variables = function(mydata){
   return(mydata)
 }
 
-
-### function produces clean clinical data based on the "24 hr" clinical data
-clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
+HospitD_cleaning = function(df, clinic_varsD, clinic_varsH_char, YesNo_varsH_char){  
   
-  
-  ####### List of clinical/lab variables to consider for analysis ########
-  
-  #names of variables from hospital data to include in either analysis (these are what will mostly become the standardized names)
-  clinic_varsH = clinic_varsD[which(clinic_varsD$in.hospit.data==1 & 
-                                   (clinic_varsD$Use.in.ND.vs.DEN.prediction==1 | clinic_varsD$Use.in.DF.vs.DHF.DSS.prediction==1))
-                                   ,"Variable.Name.in.Hospital.data"]
-  clinic_varsH_char = sapply(clinic_varsH, as.character) #convert factor to character
-  
-  #names of variables in cohort data (these names will be changed to match the hospital data variable names)
-  clinic_varsC = clinic_varsD[which(clinic_varsD$in.cohort.data==1 & 
-                                   (clinic_varsD$Use.in.ND.vs.DEN.prediction==1 | clinic_varsD$Use.in.DF.vs.DHF.DSS.prediction==1))
-                                   ,"Variable.Name.in.Cohort.data"]
-  clinic_varsC_char = sapply(clinic_varsC, as.character)
-
-
-  
-  ###############################################################################
-  ##################### Data from the hospital study ############################
-  ###############################################################################
-  
-  # This should contain "first 24 hr" data from the first batch and from some of the 3rd/4th batches
-  clinical_hospitD = read.delim(paste(clinical_inputsDir,"Clinical data_hospital study.txt", sep=""), header=TRUE, nrows=2000)
-  clinical_hospitD["code"] = apply(X=clinical_hospitD, MARGIN = 1, FUN=fcode, var="code")
-  
-  #code the yes/no variables to take numeric values 1/0 (to be consistent with cohort data)
-  #in future, we convert all yes/no variables to logical vectors (booleans)
-  YesNo_varsH = clinic_varsD[which((clinic_varsD$Use.in.ND.vs.DEN.prediction==1 | clinic_varsD$Use.in.DF.vs.DHF.DSS.prediction==1) & 
-                                     clinic_varsD$Variable.Output=="Yes, No" & clinic_varsD$in.hospit.data==1),
-                             "Variable.Name.in.Hospital.data"]
-  YesNo_varsH_char = sapply(YesNo_varsH, as.character)
+  df$temp = NA
   for (name in YesNo_varsH_char) {
-    clinical_hospitD[which(clinical_hospitD[name]=="Si"),"temp"]=1
-    clinical_hospitD[which(clinical_hospitD[name]=="No"),"temp"]=0
-    class(clinical_hospitD$temp)
+    df[which(df[name]=="Si"),"temp"]=1
+    df[which(df[name]=="No"),"temp"]=0
+    class(df$temp)
     #drop old version and rename new version
-    clinical_hospitD[name] = NULL
-    clinical_hospitD[name] = clinical_hospitD$temp
-    clinical_hospitD$temp = NULL
+    df[name] = NULL
+    df[name] = df$temp
+    df$temp = NULL
   }
   
   other_varsH = clinic_varsD[which((clinic_varsD$Use.in.ND.vs.DEN.prediction==1 | clinic_varsD$Use.in.DF.vs.DHF.DSS.prediction==1)
@@ -345,59 +313,58 @@ clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
   #make sure these variables are compatible between datasets
   #for (name in other_varsH_char) {
   #  print(name)
-  #  print(summary(clinical_hospitD[name]))
+  #  print(summary(df[name]))
   #  print(summary(clinical_cohortD_clean[name]))
   #}
   
   #make the PCR variable a factor variable (else it will mismatch with cohort data and generate error when merged)
   #also, give ND patients a PCR value of 0.  (NAs will be given to indeterminants)
-  clinical_hospitD[which(clinical_hospitD$DENV=="Negativo"),"PCR"]=0
-  clinical_hospitD$PCR = factor(x = as.character(clinical_hospitD$PCR))
-  table(clinical_hospitD$PCR)
+  df[which(df$DENV=="Negativo"),"PCR"]=0
+  df$PCR = factor(x = as.character(df$PCR))
+  table(df$PCR)
   
   #make IR variable consistent with cohort data
-  clinical_hospitD[which(clinical_hospitD$IR=="Secundario"),"new_IR"]="S"
-  clinical_hospitD[which(clinical_hospitD$IR=="Primario"),"new_IR"]="P"
-  clinical_hospitD[which(clinical_hospitD$IR=="Indeterminado"),"new_IR"]="I"
-  clinical_hospitD["IR"] = NULL
-  clinical_hospitD$IR = factor(x = as.character(clinical_hospitD$new_IR))
-  table(clinical_hospitD$IR)
-  class(clinical_hospitD$IR)
+  df[which(df$IR=="Secundario"),"new_IR"]="S"
+  df[which(df$IR=="Primario"),"new_IR"]="P"
+  df[which(df$IR=="Indeterminado"),"new_IR"]="I"
+  df["IR"] = NULL
+  df$IR = factor(x = as.character(df$new_IR))
+  table(df$IR)
+  class(df$IR)
   
   #turn Torniquete into factor (rather than numeric) variable
-  clinical_hospitD$temp = factor(x = as.character(clinical_hospitD$Torniquete))
-  clinical_hospitD["Torniquete"] = NULL
-  clinical_hospitD["Torniquete"] = clinical_hospitD$temp
-  clinical_hospitD$temp = NULL
-  table(clinical_hospitD$Torniquete)
-  class(clinical_hospitD$Torniquete)
+  df$temp = factor(x = as.character(df$Torniquete))
+  df["Torniquete"] = NULL
+  df["Torniquete"] = df$temp
+  df$temp = NULL
+  table(df$Torniquete)
+  class(df$Torniquete)
   
   #add an indicator for type of study (will need this later when we merge)
-  clinical_hospitD["Study"] = "Hospital"
+  df["Study"] = "Hospital"
   
   #calculate age of patient as of sampling date (first reformat variables into dates)
-  clinical_hospitD$FTM = as.Date(clinical_hospitD$FTM, format = "%m/%d/%Y")
-  clinical_hospitD$Fecha_Nac = as.Date(clinical_hospitD$Fecha_Nac, format = "%m/%d/%Y")
-  clinical_hospitD$FIS = as.Date(clinical_hospitD$FIS, format = "%m/%d/%Y")
-  clinical_hospitD$FIF = as.Date(clinical_hospitD$FIF, format = "%m/%d/%Y")
-  clinical_hospitD$age = as.numeric(clinical_hospitD$FTM - clinical_hospitD$Fecha_Nac)/365.25
+  df$FTM = as.Date(df$FTM, format = "%m/%d/%Y")
+  df$Fecha_Nac = as.Date(df$Fecha_Nac, format = "%m/%d/%Y")
+  df$FIS = as.Date(df$FIS, format = "%m/%d/%Y")
+  df$FIF = as.Date(df$FIF, format = "%m/%d/%Y")
+  df$age = as.numeric(df$FTM - df$Fecha_Nac)/365.25
   #calculate days from fever onset to sampling date (changed from days since symptom onset on 11-25-2014)
-  clinical_hospitD$DaysSick = as.numeric(clinical_hospitD$FTM - clinical_hospitD$FIF) + 1
+  df$DaysSick = as.numeric(df$FTM - df$FIF) + 1
   #use FIS if FIF is missing
-  clinical_hospitD[which(is.na(clinical_hospitD$FIF)),]$DaysSick = 
-    as.numeric(clinical_hospitD[which(is.na(clinical_hospitD$FIF)),]$FTM - clinical_hospitD[which(is.na(clinical_hospitD$FIF)),]$FIS) + 1
+  df[which(is.na(df$FIF)),]$DaysSick = 
+    as.numeric(df[which(is.na(df$FIF)),]$FTM - df[which(is.na(df$FIF)),]$FIS) + 1
   #check calculation
-  #View(clinical_hospitD[,c("FTM","Fecha_Nac","FIS","age","DaysSick")])
+  #View(df[,c("FTM","Fecha_Nac","FIS","age","DaysSick")])
   
   #keep only relevant variables
   nonclinic_keepervars = c("code","Study","FTM","age","DaysSick", 
                            "ClasificacionPrimerDia","ClasificacionFinal", "Res_Final","Fecha_Nac")
   namesH_nonLCMS = as.character(c(clinic_varsH_char, nonclinic_keepervars))
   #drop the one guy who is missing "DaysSick" since this variable is too important
-  clinical_hospitD_prelim = clinical_hospitD[,namesH_nonLCMS]
+  df_prelim = df[,namesH_nonLCMS]
   #rename some vars
-  names(clinical_hospitD_prelim)[names(clinical_hospitD_prelim)=="ClasificacionPrimerDia"] <- "WHO24h_given"
-  names(clinical_hospitD_prelim)[names(clinical_hospitD_prelim)=="Res_Final"] <- "DENV"
+  names(df_prelim)[names(df_prelim)=="Res_Final"] <- "DENV"
   
   ### Re-create initial diagnosis variable ###
   DxDHF_varsH = list("Torniquete","Proteina_tot","Albumina","Plaquetas",
@@ -405,14 +372,14 @@ clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
                      "Venopuncion","Hipermenorrea","Vaginal","Subconjuntival","Hemoptisis","Nariz","Encias",
                      "Melena","Hematemesis",
                      "Derrame_","Ascitis","Edema_","Hemoconcentracion","HematocritoElev")
-  get_mismatches(colnames(clinical_hospitD_prelim),DxDHF_varsH,"in_data","needed") #we have all needed vars
+  get_mismatches(colnames(df_prelim),DxDHF_varsH,"in_data","needed") #we have all needed vars
   DxDSS_varsH = list("Presion_Arterial_Sist","Presion_Arterial_Dias", 
                      "ExtremidadesFrias","Palidez","Sudoracion","Escalofrio","Llenado_Capilar")
-  get_mismatches(colnames(clinical_hospitD_prelim),DxDSS_varsH,"in_data","needed") #we have all needed vars
- 
+  get_mismatches(colnames(df_prelim),DxDSS_varsH,"in_data","needed") #we have all needed vars
+  
   #DHF
   #creates is.torniquete20plus, is.thrombocytopenia, is.Estrechamiento, is.hypotension (among others)
-  temp = create_binary_variables(clinical_hospitD_prelim) 
+  temp = create_binary_variables(df_prelim) 
   
   #this is the one categorical "general symptom" variable -- not in cohort data
   temp$is.pulse_rapid = (temp$Pulso=="rapid")
@@ -442,14 +409,117 @@ clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
   #when is.thrombocytopenia is NA, can give a 0 but will never give a 1 (gives NA instead if other criteria are satisfied and is.thrombocytopenia is NA -- reasonable)
   temp$DHF = with(temp, ifelse((is.torniquete20plus | Hem1 | Hem2 | Hem3) & is.thrombocytopenia & Leakage, 1, 0 ))
   #View(temp[,c("is.torniquete20plus","Hem1","Hem2","Hem3","is.thrombocytopenia","Leakage","DHF")]) 
-  tabletot(temp, "DHF", "WHO24h_given", useNA="always") #poor match -- I have far fewer DHF cases
   
   #DSS (is.Estrechamiento, is.hypotension, is.pulse_danger, is.coldclammy created in "create_binary_variables")
   temp$DSS = with(temp, ifelse( DHF==1 & (is.Estrechamiento | is.hypotension) & (is.pulse_danger | is.coldclammy | Llenado_Capilar), 1, 0 ))
   
+  return(temp)
+}
+
+### function produces clean clinical data based on the "24 hr" clinical data
+clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
+  
+  
+  ####### List of clinical/lab variables to consider for analysis ########
+  
+  #names of variables from hospital data to include in either analysis (these are what will mostly become the standardized names)
+  clinic_varsH = clinic_varsD[which(clinic_varsD$in.hospit.data==1 & 
+                                   (clinic_varsD$Use.in.ND.vs.DEN.prediction==1 | clinic_varsD$Use.in.DF.vs.DHF.DSS.prediction==1))
+                                   ,"Variable.Name.in.Hospital.data"]
+  clinic_varsH_char = sapply(clinic_varsH, as.character) #convert factor to character
+  
+  #names of variables in cohort data (these names will be changed to match the hospital data variable names)
+  clinic_varsC = clinic_varsD[which(clinic_varsD$in.cohort.data==1 & 
+                                   (clinic_varsD$Use.in.ND.vs.DEN.prediction==1 | clinic_varsD$Use.in.DF.vs.DHF.DSS.prediction==1))
+                                   ,"Variable.Name.in.Cohort.data"]
+  clinic_varsC_char = sapply(clinic_varsC, as.character)
+  
+  #code the yes/no variables to take numeric values 1/0 (to be consistent with cohort data)
+  #in future, we convert all yes/no variables to logical vectors (booleans)
+  YesNo_varsH = clinic_varsD[which((clinic_varsD$Use.in.ND.vs.DEN.prediction==1 | clinic_varsD$Use.in.DF.vs.DHF.DSS.prediction==1) & 
+                                     clinic_varsD$Variable.Output=="Yes, No" & clinic_varsD$in.hospit.data==1),
+                             "Variable.Name.in.Hospital.data"]
+  YesNo_varsH_char = sapply(YesNo_varsH, as.character)
+
+
+  
+  ###############################################################################
+  ##################### Data from the hospital study ############################
+  ###############################################################################
+  
+  # This should contain "first 12 hr" data from the hospital
+  clinical_hospit12hr = read.delim(paste(clinical_inputsDir,"Clinical_first_12hrs_hospital_study.txt", sep=""), header=TRUE, nrows=2000) #1771 obs
+  clinical_hospit12hr["code"] = apply(X=clinical_hospit12hr, MARGIN = 1, FUN=fcode, var="Code")
+  clinical_hospit12hr["Epigastralgia"] = NA #will prevent error when this variable is expected
+  
+  # This should contain "first 24 hr" data from the first batch and from some of the 3rd/4th batches
+  clinical_hospit24hr = read.delim(paste(clinical_inputsDir,"Clinical data_hospital study.txt", sep=""), header=TRUE, nrows=2000) #1650 obs
+  clinical_hospit24hr["code2"] = apply(X=clinical_hospit24hr, MARGIN = 1, FUN=fcode, var="code")
+  clinical_hospit24hr["code"] = clinical_hospit24hr["code2"]
+  
+  # check out differences in variable content between 12hr and 24hr data
+  get_mismatches(colnames(clinical_hospit12hr),colnames(clinical_hospit24hr),"in_12hr","in_24hr") 
+    #perfect match, except 12hr is missing Age, DaysSick, Epigastralgia.  Age and DaysSick are created later on, so no problem.
+  
+  #work with 12-hr dta
+  clinical_hospit12hr_prelim = HospitD_cleaning(clinical_hospit12hr, clinic_varsD, clinic_varsH_char, YesNo_varsH_char)
+  names(clinical_hospit12hr_prelim)[names(clinical_hospit12hr_prelim)=="ClasificacionPrimerDia"] <- "WHO12h_given"
   #assume for now all patients in data satisfy the DF (suspected dengue) criteria
-  temp$WHO24hr4cat = ifelse(temp$DSS==1,"DSS",ifelse(temp$DHF==1,"DHF","DF")) 
-  table(temp$WHO24hr4cat, temp$WHO24h_given, useNA="always") #poor match
+  clinical_hospit12hr_prelim$WHO12hr4cat = ifelse(clinical_hospit12hr_prelim$DSS==1,"DSS",ifelse(clinical_hospit12hr_prelim$DHF==1,"DHF","DF")) 
+  table(clinical_hospit12hr_prelim$WHO12hr4cat, clinical_hospit12hr_prelim$WHO12h_given, useNA="always") 
+    #pretty good -- only 7 that I have as DHF but you dont and 2 vice versa.
+    #also, I have 5 with NA that you say are DF.  (probably related to missing values?)
+  
+  #work with 24-hr data
+  clinical_hospit24hr_prelim = HospitD_cleaning(clinical_hospit24hr, clinic_varsD, clinic_varsH_char, YesNo_varsH_char)
+  names(clinical_hospit24hr_prelim)[names(clinical_hospit24hr_prelim)=="ClasificacionPrimerDia"] <- "WHO24h_given"
+  #assume for now all patients in data satisfy the DF (suspected dengue) criteria
+  clinical_hospit24hr_prelim$WHO24hr4cat = ifelse(clinical_hospit24hr_prelim$DSS==1,"DSS",ifelse(clinical_hospit24hr_prelim$DHF==1,"DHF","DF")) 
+  table(clinical_hospit24hr_prelim$WHO24hr4cat, clinical_hospit24hr_prelim$WHO24h_given, useNA="always") #poor match.  use the one I calculated (WHO24hr4cat)
+  
+  #merge 12-hr with 24-hr data
+  clinical_hospitD = merge(clinical_hospit12hr_prelim, clinical_hospit24hr_prelim, by="code", all=T)
+  #compare the 12-hr and 24-hr data
+  table(clinical_hospitD$ClasificacionFinal.x, clinical_hospitD$ClasificacionFinal.y, useNA="always") #sample size increase -- 118 added DF and 3 added DHF (final)
+  table(clinical_hospitD$WHO12hr4cat, clinical_hospitD$WHO24hr4cat, useNA="always")  #seems that the 12-hr and 24-hr data are identical aside from improved sample size
+  vars_in_both = intersect(colnames(clinical_hospit24hr_prelim), colnames(clinical_hospit12hr_prelim))
+  vars_in_both_char = sapply(vars_in_both, as.character)
+  #compare values from 12 vs 24 data
+  for(var in vars_in_both_char){
+    if(var!="code"){
+      var.x = as.character(paste(var, ".x",sep=""))
+      var.y = as.character(paste(var, ".y",sep=""))
+      print(var.x)
+      #print(mode(clinical_hospitD[, var.x])) 
+      if(mode(clinical_hospitD[, var.x])=="numeric"){
+        diff = (clinical_hospitD[, var.y] -  clinical_hospitD[, var.x])
+        #positive value means higher in 24hr than 12hr (usually fine), neg values should happen only when small value mean poor health (e.g. platelets)
+        print(table(diff))
+      }
+      if(mode(clinical_hospitD[, var.x])=="logical"){
+        table(clinical_hospitD[, var.y], clinical_hospitD[, var.x])
+      }
+    }
+  }
+  #identical values with following exceptions:
+    #expected direction:
+      #Higado +2 (n=2), +3 (n=3)
+      #Rash +1 (n=1)
+    #unexpected direction: 
+      #Artralgia -1 (n=1)
+      #Mialgia -1 (n=1)
+      #Perdida_Apetito -1 (n=4)
+      #PetequiasEspontaneas -1 (n=5)
+      #Esplenomegalia_mm. -111 - -78 (n=4)
+      #Engrosamiento_mm -2.6 - -1.7 (n=4)
+      #Hepatomegalia_mm -125 - -98 (n=4)
+      #Albumina +.6 (n=1)
+    #unknown direction
+      #Tos -1 (n=1)
+      #TGO_ -6 (n=1)
+    
+    
+  
   
   ## Additional outcome indicators (see if my DHF indicator matches with Lionel's 12 hr Dx indicator) ##
   outcomes_hospitD = read.delim(paste(clinical_inputsDir,"Additional outcomes_hospital study.txt", sep=""), header=TRUE, nrows=2000)
@@ -457,11 +527,11 @@ clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
   outcomes_hospitD$CareLevelFinal = substr(outcomes_hospitD$CareLevelFinal, start=11, stop=12) #change "Categoria 1", "Categoria 2", "Categoria 3" to "1", "2", "3"
   #reformat the sample ID variable so that it is "ID" followed by 4-digit character variable
   outcomes_hospitD$code = apply(X=outcomes_hospitD, MARGIN = 1, FUN=fcode, var="code")
+  
   #merge with other cleaned hospital data 
   clinical_hospitD_clean = merge(outcomes_hospitD[,c("code","Manejo","CareLevelFinal","WHOFinal4cat","WHORevisedFinal","CareLevel12hr","WHO12hr4cat","WHORevised12hr")], 
-                                 temp, by="code", all.y=T)
+                                 clinical_hospit24hr_prelim, by="code", all.y=T)
   tabletot(clinical_hospitD_clean, "ClasificacionFinal", "WHOFinal4cat", useNA="always") #sanity check.  Only one mismatch.
-  tabletot(clinical_hospitD_clean, "WHO24hr4cat", "WHO12hr4cat", useNA="always") #not a totally terrible match (but misaligned in both directions)
   tabletot(clinical_hospitD_clean, "WHO24hr4cat", "ClasificacionFinal") #sample size for predicting severe dengue
   clinical_hospitD_clean$WHOFinal4cat = NULL #remove to avoid confusion (will produce it later using ClasificacionFinal and DENV indicator)
   

@@ -54,7 +54,7 @@ library(chron)
 
 #directory containing code
 #codeDir = "/srv/scratch/carolyn/Dengue_code/" #on Amold from Amold's perspective
-codeDir = "/home/carolyn/temp_Dengue_code/git_dengue/" #on myPC
+codeDir = "/home/carolyn/temp_Dengue_code/github_dengue/" #on myPC
 
 #select main directory in which to find subfolders containing data and results
 #homeDir = "/srv/scratch/carolyn/" #on Amold from Amold's perspective

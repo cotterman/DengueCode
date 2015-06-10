@@ -1,4 +1,4 @@
-###############################################################################
+e###############################################################################
 ##################### Denge Dx Project Documentation ##########################
 ###############################################################################
 
@@ -13,7 +13,7 @@ Locations
         * shortened name used with git commands: dcode
     * synced to the following folder:
         * on my PC: /home/carolyn/temp_Dengue_code (not maintained -- only for one-offs)
-        * on Amold: /srv/scratch/carolyn/Dengue_code
+        * on Mitra: /users/ccotter/github_dengue
 
 
 ## Location of raw data (and other large dengue data files) on server: 
