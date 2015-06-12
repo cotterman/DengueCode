@@ -134,6 +134,8 @@ comboD1D2_wImpRF1 <- merge(clin_full_wImputedRF1, resp_D1D2, by=c("code","Study"
 #Data for serum run 1 only
 comboD1_filter50n_wImpRF1 <- merge(clin24_full_wImputedRF1, respD1_filter50n, by=c("code","Study"), all=F) #88 obs
 save(comboD1_filter50n_wImpRF1, file=paste(outputsDir,"comboD1_filter50n_wImpRF1.RData", sep=""))
+write.table(comboD1_filter50n_wImpRF1, paste(outputsDir,"comboD1_filter50n_wImpRF1.txt", sep=""), sep="\t")
+
 #Data for serum run 2 only
 comboD2_filter50n_wImpRF1 <- merge(clin_full_wImputedRF1, respD2_filter50n, by=c("code","Study"), all=F) #75 obs
 

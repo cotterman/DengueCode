@@ -104,7 +104,7 @@ load(paste(outputsDir,"clin_full_wImputedRF1.RData", sep="")) #loads clin_full_w
 #load(paste(outputsDir,"comboD3_filter50n.RData", sep="")) #loads comboD3_filter50n
 #load(paste(outputsDir,"comboD5_filter50n.RData", sep="")) #loads comboD5_filter50n
 # this data was created in "create_data_for_analysis.R" - contains mass hunter LCMS combined with imputed clinical
-load(paste(outputsDir,"comboD1_filter50n_wImpRF1.RData", sep="")) #loads comboD1_filter50n_wImpRF1
+load(paste(outputsDir,"comboD1_filter50n_wImpRF1.RData", sep="")) #loads comboD1_filter50n_wImpRF1 -- now with clin24 data
 #load(paste(outputsDir,"comboD3_filter50n_wImpRF1.RData", sep="")) #loads comboD3_filter50n_wImpRF1
 #load(paste(outputsDir,"comboD5_filter50n_wImpRF1.RData", sep="")) #loads comboD5_filter50n_wImpRF1
 
@@ -136,24 +136,27 @@ covarlist_all = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_va
                                     eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
                                     XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
 write(covarlist_all, paste(outputsDir,"covarlist_all.txt", sep=""),sep = ",")
-
 covarlist_CohortRestrict = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
                                                eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
                                                XD=clinical_full_clean, restrict_to_cohort_vars=T, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
+write(covarlist_CohortRestrict, paste(outputsDir,"covarlist_CohortRestrict.txt", sep=""),sep = ",")
 covarlist_noUltraX = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
                                          eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
                                          XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=F, BloodLab=T)
+write(covarlist_noUltraX, paste(outputsDir,"covarlist_noUltraX.txt", sep=""),sep = ",")
 covarlist_genOnly = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
                                         eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
                                         XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=F, BloodLab=F)
+write(covarlist_genOnly, paste(outputsDir,"covarlist_genOnly.txt", sep=""),sep = ",")
 covarlist_noMiss = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=T, 
                                        eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
                                        XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=F, UltraX=T, BloodLab=T)
+write(covarlist_noMiss, paste(outputsDir,"covarlist_noMiss.txt", sep=""),sep = ",")
 #These are the 41 clinical vars included in original (R33) analysis -- the ones that are never missing among our 88 samples 
 covarDEN_88noMiss = get_clinic_var_list(clinic_varsD, outcome="ND.vs.DEN", eliminate_vars_with_missings=T, 
                                         eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
                                         XD=clinical_D1_clean, restrict_to_cohort_vars=T, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
-
+write(covarDEN_88noMiss, paste(outputsDir,"covarDEN_88noMiss.txt", sep=""),sep = ",")
 
 ############### Predictions using clinical info only ##########################
 
