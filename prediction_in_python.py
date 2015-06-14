@@ -15,7 +15,7 @@ import pandas as pd
 print "Version of pandas: " , pd.__version__ #should be v0.16.1
 from pandas.core.categorical import Categorical
 
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt; plt.rcdefaults()
 import seaborn as sns #for prettier plots
 from matplotlib import style
 from matplotlib_style_utils import rstyle
@@ -36,7 +36,7 @@ from sklearn.cross_validation import cross_val_score, cross_val_predict
 from sklearn import grid_search, metrics, datasets
 from sklearn.lda import LDA
 from sklearn.qda import QDA
-from sklearn import svm, linear_model, neighbors
+from sklearn import svm, linear_model, neighbors, dummy
 #from sklearn.linear_model import LogisticRegressionCV
 
 sys.path.append('../SuPyLearner/supylearner')
@@ -48,8 +48,10 @@ from cross_val_utils import cross_val_predict_proba
 np.random.seed(100)
 
 #inputsDir = "/home/carolyn/dengue_data_and_results_local/intermediate_data/" #home PC
-#inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC, diff login
+#inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC diff login
 inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
+outDir = "/srv/scratch/ccotter/python_out/" #mitra
+
 
 VERBOSE = True
 def log_statement(statement):
@@ -66,7 +68,7 @@ class RidgeClassifier(linear_model.RidgeClassifier):
         predict_proba = np.hstack([predict_proba0,predict_proba1])
         return predict_proba
 
-def get_predictor_list(file_name, outcome):
+def get_predictor_desc(file_name, outcome):
     """
         Imports list of variables contained in file_name
         and replaces categorical variable names with binary equivalents
@@ -99,6 +101,8 @@ def get_predictor_list(file_name, outcome):
         predictors.append("is.serotype2")
         predictors.append("is.serotype3")
         predictors.remove("PCR")
+    if outcome == "is.DHF_DSS" and predictors.count("IR")>0 :
+        predictors.remove("IR") #todo: turn to binary int variable
     return(predictors)
 
 
@@ -242,23 +246,41 @@ def main():
     #os.chdir(outDir) #change pwd to output directory
     start_time_overall = time.time()
 
-    #choose analysis type (to-do)
-    analysis = "Diagnose_OFI.v.DEN" #will use all samples; exclude IR and PCR predictors
-    analysis = "Predict_OFIandDF.v.DHFandDSS" #exclude early DHF/DSS samples; exclude IR, PCR
-    analysis = "Predict_DF.v.DHFandDSS" #exclude OFI and early DHF/DSS samples; use all predictors
-    analysis = "Diagnose_DF.v.DHFandDSS" #all samples; most useful fancy predictors
-    outcome = "is.DEN"
-
+    #choose title (this will be title of resulting graph)
+    #title = "Predict_OFIandDF.v.DHFandDSS" #exclude early DHF/DSS samples; exclude IR, PCR
+    #title = "Diagnose_DF.v.DHFandDSS" #all samples; most useful fancy predictors
+    outcome = "is.DEN"  
+    #outcome = "is.DHF_DSS"
+    if outcome=="is.DEN":
+        comparison_groups = "OFI vs. DENV using "
+        title = "Diagnose_OFI.v.DEN" #will use all samples; exclude IR and PCR predictors
+        sample_exclusions = False #whether to exclude samples with initial DHF/DSS diagnosis
+    elif outcome=="is.DHF_DSS":
+        comparison_groups = "DF vs. DHF/DSS using "
+        title = "Predict_DF.v.DHFandDSS" #exclude OFI and early DHF/DSS samples; use all predictors
+        sample_exclusions = True #whether to exclude samples with initial DHF/DSS diagnosis 
+    
     #obtain list of variables to use in prediction
-    predictors = get_predictor_list("covarlist_all.txt", outcome)
+    predictor_desc = "covarlist_all"
+    #predictor_desc = "covarlist_noUltraX"
+    #predictor_desc = "covarlist_CohortRestrict"
+    #predictor_desc = "covarlist_genOnly"
     #predictors = ["is.female", "Temperatura","Tos","Albumina"] #for testing
-    #print "Predictors to use:\n" , predictors
+    predictors = get_predictor_desc(predictor_desc+".txt", outcome)
+    print "Predictors to use:\n" , predictors
 
     #create pandas dataframe with data that was cleaned in R
     df = pd.read_csv(inputsDir + "clin24_full_wImputedRF1.txt", sep='\t', 
         true_values=["True","Yes"], false_values=["False","No"], na_values=['NaN','NA']) 
     #df["is.DEN"] = df["is.DEN"].astype(int) #ML functions give predicted probs only for int outcomes
     df[["is.female"]] = (df[["Sexo"]]=="female") #need this to be True/False binary
+    if (sample_exclusions==True):
+        df = df[df.WHO12hr4cat!="DSS"] 
+        df = df[df.WHO12hr4cat!="DHF"] 
+        df = df[df.DENV=="Positivo"] #limit to only DENV positive patients
+        restrictions = ", DENV patients with non-severe initial Dx"
+    else:
+        restrictions = ""
     print "Number of rows in dataframe: " , df.shape[0], "\n"
     #print "Column names in dataframe: " , list(df.columns.values), "\n"  
     #import pdb 
@@ -272,7 +294,7 @@ def main():
         #test functions with just 1 algorithm
         svm_preds = get_predictions_svm(X, y)[:, 0] #says class order is 0,1 but 0th ele is better 
         #print zip(y, svm_preds)
-        cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
+        cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True, random_state=101)
         svm_out = get_performance_vals(y, svm_preds, "mySVM", cv_gen, confidence=0.95)
         print "\nPerformance results using SVM:\n" , svm_out
         
@@ -285,36 +307,51 @@ def main():
 
     start_time_cvSL = time.time()
     #run Super Learner
-    cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
+    cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True, random_state=10)
+    mean = dummy.DummyClassifier(strategy='most_frequent') #predict most frequent class
+    centroids = neighbors.NearestCentroid(metric='euclidean',shrink_threshold=None)
+    nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
+    gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
+    adaBoost=AdaBoostClassifier() 
     RF = RandomForestClassifier()
     logitL1=linear_model.LogisticRegression(penalty='l1', solver='liblinear') 
         #todo: explore l1 path options for optimizing penalty coefficient (e.g., l1_min_c)
     logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
-    nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
-    gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
-    adaBoost=AdaBoostClassifier() 
-    myLDA = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
+    logitElasticNet = linear_model.SGDClassifier(loss='log',
+        penalty='elasticnet', l1_ratio=.5) #todo: find l1_ratio via CV and and normalize
+    LDA_shrink = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
     myQDA = QDA() 
-    svm1=svm.SVC(kernel='rbf', probability=True)     
+    svmRBF=svm.SVC(kernel='rbf', probability=True) #hinge loss and rbf(radial basis function)     
     #svm2=svm.SVC(kernel='poly', probability=True) #much too slow!
-    svmL2=svm.LinearSVC(penalty='l2') #penalized linear support vector classification
+    #svmL1=svm.LinearSVC(penalty='l1') #could not get this to work
+    svmL2=svm.LinearSVC(penalty='l2') #uses squared hinge loss by default
+    #svmElasticNet = linear_model.SGDClassifier(loss='hinge',
+    #    penalty='elasticnet', l1_ratio=.5) #todo: find l1_ratio via CV and normalize
     #todo: spectral clustering classifier?
-    #todo: write a means classifier myself
+    #todo: fit_intercept=True for SGDClassifier?  ...and normalize first
     #lib=[RF, adaBoost]
-    lib=[RF, logitL1, logitL2, nn, gradB_dev, adaBoost, myLDA, myQDA, svm1]
-    libnames=["RF", "Lasso", "Ridge", "NN","Gradient Boost",
-               "AdaBoost", "LDA", "QDA", "SVM-rbf"]
+    lib=[mean, centroids, RF, logitL1, logitL2, logitElasticNet, nn, gradB_dev, 
+        adaBoost, LDA_shrink, myQDA, svmRBF, svmL2]
+    libnames=["Mean","Centroids", "RF", "Logit-L1", "Logit-L2", "Logit-EN","NN", "GradientBoost",
+               "AdaBoost", "LDA-shrink", "QDA", "SVM-rbf", "SVM-L2"]
     #test
     #for est in lib:
     #    est.fit(X, y)
     #    print est.classes_ #all look the same ( [0, 1] )
-    sl=SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+    sl = SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
     SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
     resultsDF = get_performance_vals(y, SL_preds, "Super Learner", cv_gen, confidence=0.95)
     
     for counter, est in enumerate(lib):
         est.fit(X,y)
-        preds = cross_val_predict_proba(est, X, y, cv_gen)[:, 0]
+        print "Name: " , est.__class__.__name__
+        if hasattr(est, "predict_proba"):
+            if est.__class__.__name__ == "SVC" or est.__class__.__name__ == "LDA":
+                preds = cross_val_predict_proba(est, X, y, cv_gen)[:, 0]
+            else:
+                preds = cross_val_predict_proba(est, X, y, cv_gen)[:, 1]
+        else:
+            preds = cross_val_predict(est, X, y, cv_gen)
         out = get_performance_vals(y, preds, libnames[counter], cv_gen, confidence=0.95)
         #merge results together
         resultsDF = pd.concat([resultsDF, out])
@@ -342,10 +379,11 @@ def main():
     plt.barh(label_pos, measurements, xerr=SEs, align='center', alpha=0.4)
     plt.yticks(label_pos, labels)
     plt.xlabel('cvAUC')
-    plt.title('Distinguishing OFI from DENV')
-    style.use('ggplot') #alternative 1 -- use defaults that mimic R's ggplot
-    rstyle(ax) #alternative 2 -- gives same result as style.use('ggplot')
-    plt.show()
+    plt.title(comparison_groups+predictor_desc+restrictions)
+    #style.use('ggplot') #alternative 1 -- use defaults that mimic R's ggplot
+    #rstyle(ax) #alternative 2 -- gives same result as style.use('ggplot')
+    #plt.show() #note: running this will cause savefig to be blank
+    plt.savefig(outDir + title + '_' + predictor_desc + '.png')
 
     #alternative 2 -- use seaborn
     #problem: it seems to want to calculate error bars and not allow me to give them
