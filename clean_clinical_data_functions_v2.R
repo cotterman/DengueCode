@@ -398,8 +398,9 @@ HospitD_cleaning = function(df, clinic_varsD, clinic_varsH_char, YesNo_varsH_cha
   
   #note: sum will treat NAs as zeros.  So if all vars are NAs (which never happens), then the sum will be zero rather than NA
   temp$Hem1 = apply(temp[,c("PetequiasEspontaneas","Equimosis","Purpura","Hematoma")], 1, function(x) sum(x, na.rm=T)>0)
-  temp$Hem2 = apply(temp[,c("Venopuncion","Hipermenorrea","Vaginal","Subconjuntival","Hemoptisis","Nariz","Encias")], 1, function(x) sum(x, na.rm=T)>0) # Menorrhagia, vaginal bleeding, subconjunctival bleeding, hemoptysis, epistaxis, or gingivorrhagia
-  temp$Hem3 = apply(temp[,c("Melena","Hematemesis")], 1, function(x) sum(x, na.rm=T)>0) #Melena or hematemesis
+  # Menorrhagia, vaginal bleeding(=Vaginal), subconjunctival bleeding(=Subconjuntival), hemoptysis(=Hemoptisis), epistaxis(=nariz), or gingivorrhagia
+  temp$Hem2 = apply(temp[,c("Venopuncion","Hipermenorrea","Vaginal","Subconjuntival","Hemoptisis","Nariz","Encias")], 1, function(x) sum(x, na.rm=T)>0) 
+  temp$Hem3 = apply(temp[,c("Melena","Hematemesis")], 1, function(x) sum(x, na.rm=T)>0) #Melena or hematemesis (straight-foward)
   #Pleural Effusion is Derrame_ #check this?? PleuralEffusionLeftRx,  PleuralEffusionRightRx, PulmonaryEdemaRx, PleuralEffusionClinical, PleuralEffusionRightUS or PleuralEffusionLeftUS
   #make sure the "Edema_" variable includes "Edema, periorbital, facial, limbs, hydrocele, generalized and fovea"
   #If (Fever = Yes) AND  ([Tourniquet test] = Yes or [HEM1] = Yes or [HEM2] = Yes or [HEM3] = Yes) AND (Thrombocyto-penia = Yes) 
@@ -517,9 +518,6 @@ clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
     #unknown direction
       #Tos -1 (n=1)
       #TGO_ -6 (n=1)
-    
-    
-  
   
   ## Additional outcome indicators (see if my DHF indicator matches with Lionel's 12 hr Dx indicator) ##
   outcomes_hospitD = read.delim(paste(clinical_inputsDir,"Additional outcomes_hospital study.txt", sep=""), header=TRUE, nrows=2000)
@@ -534,6 +532,28 @@ clean_clin24_data = function(clinic_varsD, IDs_in_resp_all){
   tabletot(clinical_hospitD_clean, "ClasificacionFinal", "WHOFinal4cat", useNA="always") #sanity check.  Only one mismatch.
   tabletot(clinical_hospitD_clean, "WHO24hr4cat", "ClasificacionFinal") #sample size for predicting severe dengue
   clinical_hospitD_clean$WHOFinal4cat = NULL #remove to avoid confusion (will produce it later using ClasificacionFinal and DENV indicator)
+  
+  ## Explore initial Dx of the 88 batch 1 samples ## 
+  hospitD_exper = merge(clinical_hospitD[,c("WHO24h_given", "WHO12h_given", "WHO12hr4cat", "WHO24hr4cat","DENV.x","code")], 
+                        outcomes_hospitD[,c("WHOFinal4cat","code")], by="code")
+  hospitD_exper = merge(hospitD_exper, IDs_in_resp_all, by="code")
+  hospitD1_exper = hospitD_exper[which(hospitD_exper$serum==1),]
+  hospitD1_exper[which(hospitD1_exper$DENV.x=="Negativo"),"WHOFinal4cat"]="ND"
+  with(hospitD1_exper, table(DENV.x, WHOFinal4cat, useNA="always"))
+  with(hospitD1_exper[which(hospitD1_exper$WHOFinal4cat=="DHF" | hospitD1_exper$WHOFinal4cat=="DSS"),], table(WHO24hr4cat, WHO24h_given), useNA="always")
+  with(hospitD1_exper[which(hospitD1_exper$WHOFinal4cat=="DHF" | hospitD1_exper$WHOFinal4cat=="DSS"),], table(WHO12hr4cat, WHO12h_given), useNA="always")
+  with(hospitD1_exper, table(WHOFinal4cat, WHO12h_given), useNA="always") #13 of 30 had DF initially
+  with(hospitD1_exper, table(WHOFinal4cat, WHO12hr4cat), useNA="always")  #13 of 30 had DF initially
+  #try using just the outcomes dataset
+  outhospD_exper = merge(outcomes_hospitD, IDs_in_resp_all, by="code")
+  outhospD1_exper = outhospD_exper[which(outhospD_exper$serum==1),]
+  outhospD1_exper[which(outhospD1_exper$Res_Final=="Negativo"),"WHOFinal4cat"]="ND"
+  with(outhospD1_exper, table(WHOFinal4cat, Res_Final, useNA="always")) 
+  with(outhospD1_exper, table(WHOFinal4cat, WHO12hr4cat, useNA="always")) #these are consistent with Lionel numbers in email to CO
+  #12hr Dx across datasets provided by Nica
+  clinical_hospitD_clean = merge(outcomes_hospitD[,c("code","Manejo","CareLevelFinal","WHOFinal4cat","WHORevisedFinal","CareLevel12hr","WHO12hr4cat","WHORevised12hr")], 
+                                 clinical_hospit12hr_prelim[,c("WHO12h_given","code")], by="code", all.y=T)
+  with(clinical_hospitD_clean, table(WHO12hr4cat, WHO12h_given))
   
   # WHO revised classification for first 24 hr data
   #If [Dolor_Abdominal] = Yes or [Vomito]  = Yes or [Ascites, Plamsa leakage or  Edema] = Yes or [Mucosal hemorrhage] = Yes 
