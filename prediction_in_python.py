@@ -5,20 +5,20 @@
 
 import os  #has several functions for manipulating files and directories
 import sys
-sys.path.append('../SuPyLearner/supylearner')
-import core #this is the main SuPyLearner code
-from core import SuperLearner, cv_superlearner
-from cross_val_utils import cross_val_predict_proba
-
 import pickle
 import warnings
 import time
+import pdb #debugger
 
 import numpy as np
 import pandas as pd
 print "Version of pandas: " , pd.__version__ #should be v0.16.1
 from pandas.core.categorical import Categorical
+
 import matplotlib.pyplot as plt
+import seaborn as sns #for prettier plots
+from matplotlib import style
+from matplotlib_style_utils import rstyle
 
 import scipy as sp
 from scipy import ndimage
@@ -39,7 +39,11 @@ from sklearn.qda import QDA
 from sklearn import svm, linear_model, neighbors
 #from sklearn.linear_model import LogisticRegressionCV
 
-import pdb #debugger
+sys.path.append('../SuPyLearner/supylearner')
+import core #this is the main SuPyLearner code
+from core import SuperLearner, cv_superlearner
+from cross_val_utils import cross_val_predict_proba
+
 
 np.random.seed(100)
 
@@ -108,7 +112,7 @@ def get_predictions_svm(X, y):
     print clf.classes_ #returns array containing order classes appear in fitted_values (todo)
     return fitted_values
 
-def measure_performance(y, pred_prob, threshold):
+def measure_performance(y, pred_prob, threshold, method_name=""):
     """
         Obtain measures that depend on specified classification threshold
     """
@@ -127,37 +131,15 @@ def measure_performance(y, pred_prob, threshold):
     PPV = true_positives_count.astype(float) / predicted_positives_count 
     NPV = true_negatives_count.astype(float) / predicted_negatives_count
     errRate = error_count.astype(float) / y.shape[0]
-    values = [sensitivity, specificity, PPV, NPV, errRate]
-    names = ["sensitivity", "specificity", "PPV", "NPV", "errRate"]
-    measures = zip(names, values)
+    measures = pd.DataFrame({'sensitivity': [sensitivity], 
+                             'specificity': [specificity],
+                             'PPV': [PPV],
+                             'NPV': [NPV],
+                             'errRate': [errRate]}, 
+                            index=[method_name])
     return measures
 
-def get_performance_vals(y, pred_prob):
-    """
-        Use actual y and predicted probs to get performance measures
-    """
-    lowest_errRate = 1.
-    #For measures that depend on threshold, choose threshold that minimizes errRate.  
-    #Take lowest threshold when multiple thresholds give same minimum errRate.
-        #Thus, we prioritize sensitivity over specificity, which is appropriate.
-    for threshold in np.arange(0, 1.1, .1):
-        #print "Threshold value: " , threshold
-        performance_vals = measure_performance(y, pred_prob, threshold)
-        #print performance_vals
-        if performance_vals[-1][1] < lowest_errRate:
-            #print "current error: " , performance_vals[-1][1]
-            lowest_errRate = performance_vals[-1][1]
-            best_performance = performance_vals
-            best_threshold = threshold
-    #meaures that are independent of threshold
-    AUC = metrics.roc_auc_score(y, pred_prob)
-    MSE = sum((y - pred_prob)**2)
-    best_performance.append(("AUC", AUC))
-    best_performance.append(("MSE", MSE))
-    best_performance.append(("threshold", best_threshold))
-    return best_performance
-
-def get_cvAUC_with_CIs(y, pred_prob, cv_gen, confidence=0.95): 
+def get_cvAUC_with_CIs(y, pred_prob, cv_gen, confidence=0.95, method_name=""): 
     """
     Parameters
         y : array containing int 0s and 1s.  These are the true class labels.
@@ -204,9 +186,44 @@ def get_cvAUC_with_CIs(y, pred_prob, cv_gen, confidence=0.95):
     se = (sighat2 / n_obs)**.5
     cvAUC = AUCs.mean()
     z = stats.norm.ppf(.95)
-    ci_cvAUC = [max(cvAUC - (z*se), 0), min(cvAUC + (z*se), 1)] #truncate CI at [0,1] 
-    return_list = [cvAUC, se, ci_cvAUC, confidence] #same return list as corresponding R package 
-    return return_list
+    ci_low = max(cvAUC - (z*se), 0) #truncate CI at [0,1]
+    ci_up = min(cvAUC + (z*se), 1) 
+    cvAUCout = pd.DataFrame({'cvAUC': [cvAUC], 
+                         'se': [se],
+                         'ci_low': [ci_low],
+                         'ci_up': [ci_up],
+                         'confidence': [confidence]}, 
+                        index=[method_name]) 
+    return cvAUCout
+
+def get_performance_vals(y, pred_prob, method_name, cv_gen, confidence=0.95):
+    """
+        Use actual y and predicted probs to get performance measures
+    """
+    lowest_errRate = 1.
+    #For measures that depend on threshold, choose threshold that minimizes errRate.  
+    #Take lowest threshold when multiple thresholds give same minimum errRate.
+        #Thus, we prioritize sensitivity over specificity, which is appropriate.
+    for threshold in np.arange(0, 1.1, .1):
+        #print "Threshold value: " , threshold
+        performance_vals = measure_performance(y, pred_prob, threshold, method_name)
+        #print performance_vals['errRate']
+        if float(performance_vals['errRate']) < lowest_errRate:
+            #print "current error: " , performance_vals[-1][1]
+            lowest_errRate = float(performance_vals['errRate'])
+            best_performance = performance_vals
+            best_threshold = threshold
+    #meaures that are independent of threshold
+    AUC = metrics.roc_auc_score(y, pred_prob)
+    MSE = sum((y - pred_prob)**2)
+    best_performance['AUC'] = AUC
+    best_performance['MSE'] = MSE
+    best_performance['threshold'] = best_threshold
+    #cvAUC and confidence intervals
+    cvAUCout = get_cvAUC_with_CIs(y, pred_prob, cv_gen, confidence, method_name)
+    #combine results
+    myperformance = pd.concat([best_performance, cvAUCout], axis=1)
+    return myperformance
 
 def convert_stings_to_categories(df):
     """
@@ -248,61 +265,98 @@ def main():
     #pdb.set_trace()
     X = df[predictors].astype(float).values #include only vars we will use and convert to np array 
     y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
-    print "Actual outcomes: " , y[:10]
+    #print "Actual outcomes: " , y[:10]
     #X, y=datasets.make_classification(n_samples=88, n_features=95) #generate toy data for testing
 
-    #test functions with just 1 algorithm
-    #pred_prob = get_predictions_svm(X, y)[:, 0] #says class order is 0,1 but 0th element is better 
-    #print zip(y, pred_prob)
-    #print "\nPerformance results using 0 index: " , get_performance_vals(y, pred_prob)
-    
-    logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
-    logitL2.fit(X,y)
-    pred_prob = logitL2.predict_proba(X)[:, 1]
-    print "\nPerformance results: " , get_performance_vals(y, pred_prob)
-    cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
-    ridge_preds = cross_val_predict_proba(logitL2, X, y, cv_gen) #works
-    print "Ridge cv predictions: ", ridge_preds[:10]
-
-    #get cvAUC confidence intervals based on the LeDell method
-    ci_cvAUC = get_cvAUC_with_CIs(y, pred_prob, cv_gen, confidence=0.95)
-    print "ci_cvAUC results: " , ci_cvAUC
-
-    #run Super Learner
-    if True==False:
-        RF = RandomForestClassifier()
-        logitL1=linear_model.LogisticRegression(penalty='l1', solver='liblinear') 
-            #todo: explore l1 path options for optimizing penalty coefficient (e.g., l1_min_c)
+    if (True==False):
+        #test functions with just 1 algorithm
+        svm_preds = get_predictions_svm(X, y)[:, 0] #says class order is 0,1 but 0th ele is better 
+        #print zip(y, svm_preds)
+        cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
+        svm_out = get_performance_vals(y, svm_preds, "mySVM", cv_gen, confidence=0.95)
+        print "\nPerformance results using SVM:\n" , svm_out
+        
         logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
-        nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
-        gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
-        adaBoost=AdaBoostClassifier() 
-        myLDA = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
-        myQDA = QDA() 
-        svm1=svm.SVC(kernel='rbf', probability=True)     
-        #svm2=svm.SVC(kernel='poly', probability=True) #much too slow!
-        svmL2=svm.LinearSVC(penalty='l2') #penalized linear support vector classification
-        #todo: spectral clustering classifier?
-        #todo: write a means classifier myself
-        #lib=[RF, adaBoost]
-        lib=[RF, logitL1, logitL2, nn, gradB_dev, adaBoost, myLDA, myQDA, svm1, svmL2]
-        #libnames=["RF", "LogitL1", "LogitL2", "Nearest Neighbor","Gradient Boosting",
-        #           "AdaBoost", "LDA", "QDA", "SVM-rbf", "SVM-L2"]
-        #test
-        for est in lib:
-            est.fit(X, y)
-            print est.classes_ #all look the same ( [0, 1] )
-        sl=SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-        sl.fit(X, y)
-        sl.summarize()
-        cvtype = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
-        SL_preds = cross_val_predict_proba(sl, X, y, cvtype) #works
-        print "SL cv predictions: " , SL_preds[:10]
-        print "\nPerformance results, SL: " , get_performance_vals(y, SL_preds)
-        print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
-        print "\nPerformance results, RF: " , get_performance_vals(y, sl.y_pred_cv[:,0])
+        logitL2.fit(X,y)
+        pred_prob = logitL2.predict_proba(X)[:, 1] #not cross-validated
+        ridge_preds = cross_val_predict_proba(logitL2, X, y, cv_gen)[:, 1] 
+        ridge_out = get_performance_vals(y, ridge_preds, "myRidge", cv_gen, confidence=0.95)
+        print "\nPerformance results using Ridge: " , ridge_out
 
     start_time_cvSL = time.time()
+    #run Super Learner
+    cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
+    RF = RandomForestClassifier()
+    logitL1=linear_model.LogisticRegression(penalty='l1', solver='liblinear') 
+        #todo: explore l1 path options for optimizing penalty coefficient (e.g., l1_min_c)
+    logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
+    nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
+    gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
+    adaBoost=AdaBoostClassifier() 
+    myLDA = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
+    myQDA = QDA() 
+    svm1=svm.SVC(kernel='rbf', probability=True)     
+    #svm2=svm.SVC(kernel='poly', probability=True) #much too slow!
+    svmL2=svm.LinearSVC(penalty='l2') #penalized linear support vector classification
+    #todo: spectral clustering classifier?
+    #todo: write a means classifier myself
+    #lib=[RF, adaBoost]
+    lib=[RF, logitL1, logitL2, nn, gradB_dev, adaBoost, myLDA, myQDA, svm1]
+    libnames=["RF", "Lasso", "Ridge", "NN","Gradient Boost",
+               "AdaBoost", "LDA", "QDA", "SVM-rbf"]
+    #test
+    #for est in lib:
+    #    est.fit(X, y)
+    #    print est.classes_ #all look the same ( [0, 1] )
+    sl=SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+    SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
+    resultsDF = get_performance_vals(y, SL_preds, "Super Learner", cv_gen, confidence=0.95)
+    
+    for counter, est in enumerate(lib):
+        est.fit(X,y)
+        preds = cross_val_predict_proba(est, X, y, cv_gen)[:, 0]
+        out = get_performance_vals(y, preds, libnames[counter], cv_gen, confidence=0.95)
+        #merge results together
+        resultsDF = pd.concat([resultsDF, out])
+    print "\nCombined results: \n" , resultsDF
+    #sort results by decreasing cvAUC
+    resultsDF.sort(columns=['cvAUC','errRate'], axis=0, ascending=False, inplace=True)
+
+    #print "SL cv predictions: " , SL_preds[:10]
+    #print "\nPerformance results, SL: " , get_performance_vals(y, SL_preds)
+    #print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
+    #print "\nPerformance results, RF: " , get_performance_vals(y, sl.y_pred_cv[:,0])
+
+    #make plots
+    labels = resultsDF.index.values #array with method labels
+    label_pos = np.arange(len(labels))
+    measurements = np.array(resultsDF['cvAUC'])
+    #plotting functions want se not confidence interval bounds
+    z = stats.norm.ppf(.95)
+    SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
+           ( np.array(resultsDF['ci_up']) - np.array(resultsDF['cvAUC']) )/z ]
+
+    #use matplotlib defaults
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    plt.barh(label_pos, measurements, xerr=SEs, align='center', alpha=0.4)
+    plt.yticks(label_pos, labels)
+    plt.xlabel('cvAUC')
+    plt.title('Distinguishing OFI from DENV')
+    style.use('ggplot') #alternative 1 -- use defaults that mimic R's ggplot
+    rstyle(ax) #alternative 2 -- gives same result as style.use('ggplot')
+    plt.show()
+
+    #alternative 2 -- use seaborn
+    #problem: it seems to want to calculate error bars and not allow me to give them
+    #sns.set(style="white", context="talk")
+    #sns.set(style='ticks', palette='Set2') #prettyplot recommendation
+    #f, ax1 = plt.subplots(1, 1, figsize=(8, 6))
+    #sns.barplot(labels, measurements, ci=SEs, ax=ax1)
+    #ax1.set_ylabel("cvAUC")
+    #sns.despine()
+    #plt.setp(f.axes, yticks=[])
+    #plt.show()
 
     #cv_superlearner(sl, X, y, K=2, stratifyCV=True) #currently only returns risks_cv np array
     log_statement("\ncvSL execution time: {} minutes".format(
