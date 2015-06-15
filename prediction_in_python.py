@@ -241,14 +241,79 @@ def convert_stings_to_categories(df):
             df[col]=df[col].astype("category")
     return df
 
+def build_library():
+
+    #set parameters for GridSearchCV
+    n_jobs = 5
+    cv_grid = 5
+
+    mean = dummy.DummyClassifier(strategy='most_frequent') #predict most frequent class
+
+    #todo: consider adding a shrinkage threshold (chosen via gridsearch)
+    centroids = neighbors.NearestCentroid(metric='euclidean', shrink_threshold=None)
+
+    LDA_shrink = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
+
+    myQDA = QDA()
+
+    GBparams = {'max_depth':[2,3,4], 'min_samples_split':[2,4], 'min_samples_leaf':[1,3],
+        'max_features':[None], 'max_leaf_nodes':[None], 'loss':['deviance']}
+    GBtune = grid_search.GridSearchCV(GradientBoostingClassifier(), GBparams,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
+
+    adaBoost=AdaBoostClassifier() 
+
+    #n_estimators is number of trees in forest
+    #max_features is the number of features to consider when looking for best split
+    RFparams = {'n_estimators':[10,20],  'max_features':[10,20]} # rf parameters to try
+    RFtune = grid_search.GridSearchCV(RandomForestClassifier(), RFparams,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
+
+    NNparams = {'n_neighbors':[3,5,7]}
+    NNtune = grid_search.GridSearchCV(neighbors.KNeighborsClassifier(), NNparams,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
+
+    L1params = {'penalty':['l1'], 'C':[.5, 1, 1.5], 'solver':['liblinear']}
+    logitL1 = grid_search.GridSearchCV(linear_model.LogisticRegression(), L1params,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
+
+    L2params = {'alpha':[.5, 1, 1.5]} # LogisticRegression and LinearSVC use (2*C)^-1
+    logitL2 = grid_search.GridSearchCV(RidgeClassifier(normalize=True), L2params,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
+
+    #todo: normalize
+    #todo: fit_intercept=True?
+    ENparams = {'l1_ratio':[.15, .5, .85], 'loss':['log'], 'penalty':['elasticnet']}
+    ENtune = grid_search.GridSearchCV(linear_model.SGDClassifier(), ENparams,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
+
+    #todo: normalize
+    #todo: fit_intercept=True?
+    #uses squared hinge loss by default
+    SVMparams = {'penalty':['l2'], 'C':[.5, 1, 1.5]}
+    svmL2tune = grid_search.GridSearchCV(svm.LinearSVC(), SVMparams,
+         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
+
+    #hinge loss and rbf(radial basis function)
+    RBFparams = {'kernel':['rbf'], 'C':[.5, 1, 1.5], 'probability':[True]}
+    svmRBF = grid_search.GridSearchCV(svm.SVC(), RBFparams,
+            score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
+     
+    #libs=[adaBoost, svmRBF] #testing
+    #libnames = []
+    libs=[mean, centroids, LDA_shrink, myQDA, GBtune, adaBoost, RFtune, 
+        NNtune,logitL1, logitL2, ENtune, svmL2tune, svmRBF]
+    libnames=["mean", "centroids", "LDA_shrink", "QDA", "GBtune", "adaBoost", "RFtune", 
+        "NNtune", "logitL1", "logitL2", "ENtune", "svmL2tune", "svmRBF"]
+    if libnames == []:
+        libnames=[est.__class__.__name__ for est in libs]
+
+    return (libs, libnames)
+
 def main():
-    #filenames, outDir = parse_arguments() #filenames will be a list of (data, var_info)
-    #os.chdir(outDir) #change pwd to output directory
     start_time_overall = time.time()
 
-    #choose title (this will be title of resulting graph)
-    #title = "Predict_OFIandDF.v.DHFandDSS" #exclude early DHF/DSS samples; exclude IR, PCR
-    #title = "Diagnose_DF.v.DHFandDSS" #all samples; most useful fancy predictors
+    ## Choose outcome variable ##
     outcome = "is.DEN"  
     #outcome = "is.DHF_DSS"
     if outcome=="is.DEN":
@@ -260,7 +325,7 @@ def main():
         title = "Predict_DF.v.DHFandDSS" #exclude OFI and early DHF/DSS samples; use all predictors
         sample_exclusions = True #whether to exclude samples with initial DHF/DSS diagnosis 
     
-    #obtain list of variables to use in prediction
+    ## Choose list of variables to use in prediction ##
     predictor_desc = "covarlist_all"
     #predictor_desc = "covarlist_noUltraX"
     #predictor_desc = "covarlist_CohortRestrict"
@@ -269,7 +334,7 @@ def main():
     predictors = get_predictor_desc(predictor_desc+".txt", outcome)
     print "Predictors to use:\n" , predictors
 
-    #create pandas dataframe with data that was cleaned in R
+    ## Create pandas dataframe with data that was cleaned in R ##
     df = pd.read_csv(inputsDir + "clin24_full_wImputedRF1.txt", sep='\t', 
         true_values=["True","Yes"], false_values=["False","No"], na_values=['NaN','NA']) 
     #df["is.DEN"] = df["is.DEN"].astype(int) #ML functions give predicted probs only for int outcomes
@@ -283,66 +348,27 @@ def main():
         restrictions = ""
     print "Number of rows in dataframe: " , df.shape[0], "\n"
     #print "Column names in dataframe: " , list(df.columns.values), "\n"  
-    #import pdb 
-    #pdb.set_trace()
     X = df[predictors].astype(float).values #include only vars we will use and convert to np array 
     y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
     #print "Actual outcomes: " , y[:10]
     #X, y=datasets.make_classification(n_samples=88, n_features=95) #generate toy data for testing
 
-    if (True==False):
-        #test functions with just 1 algorithm
-        svm_preds = get_predictions_svm(X, y)[:, 0] #says class order is 0,1 but 0th ele is better 
-        #print zip(y, svm_preds)
-        cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True, random_state=101)
-        svm_out = get_performance_vals(y, svm_preds, "mySVM", cv_gen, confidence=0.95)
-        print "\nPerformance results using SVM:\n" , svm_out
-        
-        logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
-        logitL2.fit(X,y)
-        pred_prob = logitL2.predict_proba(X)[:, 1] #not cross-validated
-        ridge_preds = cross_val_predict_proba(logitL2, X, y, cv_gen)[:, 1] 
-        ridge_out = get_performance_vals(y, ridge_preds, "myRidge", cv_gen, confidence=0.95)
-        print "\nPerformance results using Ridge: " , ridge_out
 
+    ## Build library of classifiers ##
+    myLibrary = build_library()
+    libs = myLibrary[0]
+    libnames = myLibrary[1]
+
+    ## Get Super Learner Results ##
     start_time_cvSL = time.time()
-    #run Super Learner
     cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True, random_state=10)
-    mean = dummy.DummyClassifier(strategy='most_frequent') #predict most frequent class
-    centroids = neighbors.NearestCentroid(metric='euclidean',shrink_threshold=None)
-    nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
-    gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
-    adaBoost=AdaBoostClassifier() 
-    RF = RandomForestClassifier()
-    logitL1=linear_model.LogisticRegression(penalty='l1', solver='liblinear') 
-        #todo: explore l1 path options for optimizing penalty coefficient (e.g., l1_min_c)
-    logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
-    logitElasticNet = linear_model.SGDClassifier(loss='log',
-        penalty='elasticnet', l1_ratio=.5) #todo: find l1_ratio via CV and and normalize
-    LDA_shrink = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
-    myQDA = QDA() 
-    svmRBF=svm.SVC(kernel='rbf', probability=True) #hinge loss and rbf(radial basis function)     
-    #svm2=svm.SVC(kernel='poly', probability=True) #much too slow!
-    #svmL1=svm.LinearSVC(penalty='l1') #could not get this to work
-    svmL2=svm.LinearSVC(penalty='l2') #uses squared hinge loss by default
-    #svmElasticNet = linear_model.SGDClassifier(loss='hinge',
-    #    penalty='elasticnet', l1_ratio=.5) #todo: find l1_ratio via CV and normalize
-    #todo: spectral clustering classifier?
-    #todo: fit_intercept=True for SGDClassifier?  ...and normalize first
-    #lib=[RF, adaBoost]
-    lib=[mean, centroids, RF, logitL1, logitL2, logitElasticNet, nn, gradB_dev, 
-        adaBoost, LDA_shrink, myQDA, svmRBF, svmL2]
-    libnames=["Mean","Centroids", "RF", "Logit-L1", "Logit-L2", "Logit-EN","NN", "GradientBoost",
-               "AdaBoost", "LDA-shrink", "QDA", "SVM-rbf", "SVM-L2"]
-    #test
-    #for est in lib:
-    #    est.fit(X, y)
-    #    print est.classes_ #all look the same ( [0, 1] )
-    sl = SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+    sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
     SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
     resultsDF = get_performance_vals(y, SL_preds, "Super Learner", cv_gen, confidence=0.95)
-    
-    for counter, est in enumerate(lib):
+
+
+    ## Get results for each algorith in library ##    
+    for counter, est in enumerate(libs):
         est.fit(X,y)
         print "Name: " , est.__class__.__name__
         if hasattr(est, "predict_proba"):
@@ -364,7 +390,7 @@ def main():
     #print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
     #print "\nPerformance results, RF: " , get_performance_vals(y, sl.y_pred_cv[:,0])
 
-    #make plots
+    ## Make plots of results ##
     labels = resultsDF.index.values #array with method labels
     label_pos = np.arange(len(labels))
     measurements = np.array(resultsDF['cvAUC'])
@@ -372,8 +398,6 @@ def main():
     z = stats.norm.ppf(.95)
     SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
            ( np.array(resultsDF['ci_up']) - np.array(resultsDF['cvAUC']) )/z ]
-
-    #use matplotlib defaults
     fig = plt.figure()
     ax = fig.add_subplot(111)
     plt.barh(label_pos, measurements, xerr=SEs, align='center', alpha=0.4)
@@ -385,18 +409,8 @@ def main():
     #plt.show() #note: running this will cause savefig to be blank
     plt.savefig(outDir + title + '_' + predictor_desc + '.png')
 
-    #alternative 2 -- use seaborn
-    #problem: it seems to want to calculate error bars and not allow me to give them
-    #sns.set(style="white", context="talk")
-    #sns.set(style='ticks', palette='Set2') #prettyplot recommendation
-    #f, ax1 = plt.subplots(1, 1, figsize=(8, 6))
-    #sns.barplot(labels, measurements, ci=SEs, ax=ax1)
-    #ax1.set_ylabel("cvAUC")
-    #sns.despine()
-    #plt.setp(f.axes, yticks=[])
-    #plt.show()
 
-    #cv_superlearner(sl, X, y, K=2, stratifyCV=True) #currently only returns risks_cv np array
+    ## Ouput execution time info ##
     log_statement("\ncvSL execution time: {} minutes".format(
         (time.time() - start_time_cvSL)/60. ) ) 
 
