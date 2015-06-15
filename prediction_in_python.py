@@ -9,6 +9,7 @@ import pickle
 import warnings
 import time
 import pdb #debugger
+import math
 
 import numpy as np
 import pandas as pd
@@ -241,7 +242,12 @@ def convert_stings_to_categories(df):
             df[col]=df[col].astype("category")
     return df
 
-def build_library():
+def build_library(p):
+    """
+        Develop list of prediction functions.
+        p is the number of predictors.  
+            The parameters fed to some algorithms (e.g., RandomForest) are functions of p.
+    """
 
     #set parameters for GridSearchCV
     n_jobs = 5
@@ -263,9 +269,9 @@ def build_library():
 
     adaBoost=AdaBoostClassifier() 
 
-    #n_estimators is number of trees in forest
+    #n_estimators is number of trees in forest (R default is 1000)
     #max_features is the number of features to consider when looking for best split
-    RFparams = {'n_estimators':[10,20],  'max_features':[10,20]} # rf parameters to try
+    RFparams = {'n_estimators':[1000],  'max_features':[ math.ceil(p/3), math.ceil(math.sqrt(p)) ]} 
     RFtune = grid_search.GridSearchCV(RandomForestClassifier(), RFparams,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
 
@@ -281,15 +287,23 @@ def build_library():
     logitL2 = grid_search.GridSearchCV(RidgeClassifier(normalize=True), L2params,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
 
-    #todo: normalize
+    #todo: normalize data(!)
     #todo: fit_intercept=True?
-    ENparams = {'l1_ratio':[.15, .5, .85], 'loss':['log'], 'penalty':['elasticnet']}
+    #l1_ratio of 1 corresponds to L1 penalty (lasso); l1_ratio of 0 gives L2 penalty (ridge)
+        #note: R's the elastic net penalty is [(1-param)/2]L2 + paramL1 
+        #Rather than simply (1-param)L2 + paramL1 as it is here (Tibshironi does as python does) 
+    #alpha is the regularization term coefficient (called lambda in R's glmnet)
+    ENparams = {'l1_ratio':[.15, .5, .85], 'loss':['log'], 'penalty':['elasticnet'],
+                'alpha':[np.arange()], 'warm_start':[True], 'fit_intercept':[True]} 
     ENtune = grid_search.GridSearchCV(linear_model.SGDClassifier(), ENparams,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
+
+    #todo: try ensemble gradient descent
 
     #todo: normalize
     #todo: fit_intercept=True?
     #uses squared hinge loss by default
+    #C is the 
     SVMparams = {'penalty':['l2'], 'C':[.5, 1, 1.5]}
     svmL2tune = grid_search.GridSearchCV(svm.LinearSVC(), SVMparams,
          score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
@@ -299,7 +313,7 @@ def build_library():
     svmRBF = grid_search.GridSearchCV(svm.SVC(), RBFparams,
             score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
      
-    #libs=[adaBoost, svmRBF] #testing
+    #libs=[adaBoost, svmRBF] #for testing
     #libnames = []
     libs=[mean, centroids, LDA_shrink, myQDA, GBtune, adaBoost, RFtune, 
         NNtune,logitL1, logitL2, ENtune, svmL2tune, svmRBF]
@@ -337,7 +351,7 @@ def main():
     ## Create pandas dataframe with data that was cleaned in R ##
     df = pd.read_csv(inputsDir + "clin24_full_wImputedRF1.txt", sep='\t', 
         true_values=["True","Yes"], false_values=["False","No"], na_values=['NaN','NA']) 
-    #df["is.DEN"] = df["is.DEN"].astype(int) #ML functions give predicted probs only for int outcomes
+    #df["is.DEN"] = df["is.DEN"].astype(int) #ML funcs give predicted probs only for int outcomes
     df[["is.female"]] = (df[["Sexo"]]=="female") #need this to be True/False binary
     if (sample_exclusions==True):
         df = df[df.WHO12hr4cat!="DSS"] 
@@ -355,7 +369,7 @@ def main():
 
 
     ## Build library of classifiers ##
-    myLibrary = build_library()
+    myLibrary = build_library( p=len(predictors) )
     libs = myLibrary[0]
     libnames = myLibrary[1]
 
