@@ -9,6 +9,7 @@ import pickle
 import warnings
 import time
 import pdb #debugger
+import math
 
 import numpy as np
 import pandas as pd
@@ -16,9 +17,10 @@ print "Version of pandas: " , pd.__version__ #should be v0.16.1
 from pandas.core.categorical import Categorical
 
 import matplotlib.pyplot as plt
-import seaborn as sns #for prettier plots
-from matplotlib import style
-from matplotlib_style_utils import rstyle
+#import matplotlib.pyplot as plt; plt.rcdefaults()
+#import seaborn as sns #for prettier plots
+#from matplotlib import style
+#from matplotlib_style_utils import rstyle
 
 import scipy as sp
 from scipy import ndimage
@@ -29,14 +31,17 @@ import scipy.ndimage as ndi
 
 import sklearn
 print "Version of sklearn: " , sklearn.__version__ #should be v0.16.1
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import AdaBoostClassifier, ExtraTreesClassifier
 from sklearn import cross_validation
 import sklearn.cross_validation as cv
 from sklearn.cross_validation import cross_val_score, cross_val_predict
-from sklearn import grid_search, metrics, datasets
+from sklearn import grid_search, metrics, datasets, preprocessing, feature_selection
+from sklearn.feature_selection import SelectKBest
 from sklearn.lda import LDA
 from sklearn.qda import QDA
-from sklearn import svm, linear_model, neighbors
+from sklearn import svm, linear_model, neighbors, dummy, tree
+from sklearn.pipeline import Pipeline
 #from sklearn.linear_model import LogisticRegressionCV
 
 sys.path.append('../SuPyLearner/supylearner')
@@ -48,8 +53,10 @@ from cross_val_utils import cross_val_predict_proba
 np.random.seed(100)
 
 #inputsDir = "/home/carolyn/dengue_data_and_results_local/intermediate_data/" #home PC
-#inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC, diff login
+#inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC diff login
 inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
+outDir = "/srv/scratch/ccotter/python_out/" #mitra
+
 
 VERBOSE = True
 def log_statement(statement):
@@ -66,7 +73,7 @@ class RidgeClassifier(linear_model.RidgeClassifier):
         predict_proba = np.hstack([predict_proba0,predict_proba1])
         return predict_proba
 
-def get_predictor_list(file_name, outcome):
+def get_predictor_desc(file_name, outcome):
     """
         Imports list of variables contained in file_name
         and replaces categorical variable names with binary equivalents
@@ -99,6 +106,8 @@ def get_predictor_list(file_name, outcome):
         predictors.append("is.serotype2")
         predictors.append("is.serotype3")
         predictors.remove("PCR")
+    if outcome == "is.DHF_DSS" and predictors.count("IR")>0 :
+        predictors.remove("IR") #todo: turn to binary int variable
     return(predictors)
 
 
@@ -237,97 +246,144 @@ def convert_stings_to_categories(df):
             df[col]=df[col].astype("category")
     return df
 
-def main():
-    #filenames, outDir = parse_arguments() #filenames will be a list of (data, var_info)
-    #os.chdir(outDir) #change pwd to output directory
-    start_time_overall = time.time()
-
-    #choose analysis type (to-do)
-    analysis = "Diagnose_OFI.v.DEN" #will use all samples; exclude IR and PCR predictors
-    analysis = "Predict_OFIandDF.v.DHFandDSS" #exclude early DHF/DSS samples; exclude IR, PCR
-    analysis = "Predict_DF.v.DHFandDSS" #exclude OFI and early DHF/DSS samples; use all predictors
-    analysis = "Diagnose_DF.v.DHFandDSS" #all samples; most useful fancy predictors
-    outcome = "is.DEN"
-
-    #obtain list of variables to use in prediction
-    predictors = get_predictor_list("covarlist_all.txt", outcome)
-    #predictors = ["is.female", "Temperatura","Tos","Albumina"] #for testing
-    #print "Predictors to use:\n" , predictors
-
-    #create pandas dataframe with data that was cleaned in R
-    df = pd.read_csv(inputsDir + "clin24_full_wImputedRF1.txt", sep='\t', 
+def get_data(inputsDir, filename, sample_exclusions):
+    df = pd.read_csv(inputsDir + filename, sep='\t', 
         true_values=["True","Yes"], false_values=["False","No"], na_values=['NaN','NA']) 
-    #df["is.DEN"] = df["is.DEN"].astype(int) #ML functions give predicted probs only for int outcomes
+    #df["is.DEN"] = df["is.DEN"].astype(int) #ML funcs give predicted probs only for int outcomes
     df[["is.female"]] = (df[["Sexo"]]=="female") #need this to be True/False binary
+    if (sample_exclusions==True):
+        df = df[df.WHO12hr4cat!="DSS"] 
+        df = df[df.WHO12hr4cat!="DHF"] 
+        df = df[df.DENV=="Positivo"] #limit to only DENV positive patients
     print "Number of rows in dataframe: " , df.shape[0], "\n"
-    #print "Column names in dataframe: " , list(df.columns.values), "\n"  
-    #import pdb 
-    #pdb.set_trace()
-    X = df[predictors].astype(float).values #include only vars we will use and convert to np array 
-    y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
-    #print "Actual outcomes: " , y[:10]
-    #X, y=datasets.make_classification(n_samples=88, n_features=95) #generate toy data for testing
+    #print "Column names in dataframe: " , list(df.columns.values), "\n" 
+    return df
 
-    if (True==False):
-        #test functions with just 1 algorithm
-        svm_preds = get_predictions_svm(X, y)[:, 0] #says class order is 0,1 but 0th ele is better 
-        #print zip(y, svm_preds)
-        cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
-        svm_out = get_performance_vals(y, svm_preds, "mySVM", cv_gen, confidence=0.95)
-        print "\nPerformance results using SVM:\n" , svm_out
-        
-        logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
-        logitL2.fit(X,y)
-        pred_prob = logitL2.predict_proba(X)[:, 1] #not cross-validated
-        ridge_preds = cross_val_predict_proba(logitL2, X, y, cv_gen)[:, 1] 
-        ridge_out = get_performance_vals(y, ridge_preds, "myRidge", cv_gen, confidence=0.95)
-        print "\nPerformance results using Ridge: " , ridge_out
+def build_library(p, nobs, screen=None):
+    """
+        Develop list of prediction functions.
+        p is the number of predictors.  
+        nobs in number of observations in data
+            The parameters fed to some algorithms (e.g., RandomForest) are functions of p and nobs.
+    """
 
-    start_time_cvSL = time.time()
-    #run Super Learner
-    cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True)
-    RF = RandomForestClassifier()
-    logitL1=linear_model.LogisticRegression(penalty='l1', solver='liblinear') 
-        #todo: explore l1 path options for optimizing penalty coefficient (e.g., l1_min_c)
-    logitL2=RidgeClassifier(normalize=True) #outputs class predictions but not probs
-    nn=neighbors.KNeighborsClassifier(n_neighbors=4) #Classes are ordered by lexicographic order.
-    gradB_dev=GradientBoostingClassifier(loss='deviance') #for probabilistic outputs
+    #set parameters for GridSearchCV
+    n_jobs = 5
+    cv_grid = 5
+
+    mean = dummy.DummyClassifier(strategy='most_frequent') #predict most frequent class
+
+    #very simple CART (for comparison sake)
+    CART = tree.DecisionTreeClassifier(max_depth=10) 
+
+    #todo: consider adding a shrinkage threshold (chosen via gridsearch)
+    centroids = neighbors.NearestCentroid(metric='euclidean', shrink_threshold=None)
+
+    LDA_shrink = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
+
+    myQDA = QDA()
+
+    GBparams = {'max_depth':[2,3,4], 'min_samples_split':[2,4], 'min_samples_leaf':[1,3],
+        'max_features':[None], 'max_leaf_nodes':[None], 'loss':['deviance']}
+    GBtune = grid_search.GridSearchCV(GradientBoostingClassifier(), GBparams,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
+
     adaBoost=AdaBoostClassifier() 
-    myLDA = LDA(solver='lsqr', shrinkage='auto') #optimal shrinkage is calculated analytically
-    myQDA = QDA() 
-    svm1=svm.SVC(kernel='rbf', probability=True)     
-    #svm2=svm.SVC(kernel='poly', probability=True) #much too slow!
-    svmL2=svm.LinearSVC(penalty='l2') #penalized linear support vector classification
-    #todo: spectral clustering classifier?
-    #todo: write a means classifier myself
-    #lib=[RF, adaBoost]
-    lib=[RF, logitL1, logitL2, nn, gradB_dev, adaBoost, myLDA, myQDA, svm1]
-    libnames=["RF", "Lasso", "Ridge", "NN","Gradient Boost",
-               "AdaBoost", "LDA", "QDA", "SVM-rbf"]
-    #test
-    #for est in lib:
-    #    est.fit(X, y)
-    #    print est.classes_ #all look the same ( [0, 1] )
-    sl=SuperLearner(lib, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-    SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
-    resultsDF = get_performance_vals(y, SL_preds, "Super Learner", cv_gen, confidence=0.95)
-    
-    for counter, est in enumerate(lib):
+
+    #n_estimators is number of trees in forest (R default is 1000)
+    #max_features is the number of features to consider when looking for best split
+    RFparams = {'n_estimators':[1000],  'max_features':[ math.ceil(p/3), math.ceil(math.sqrt(p)) ]} 
+    RFtune = grid_search.GridSearchCV(RandomForestClassifier(), RFparams,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
+
+    NNparams = {'n_neighbors':[3,5,7]}
+    NNtune = grid_search.GridSearchCV(neighbors.KNeighborsClassifier(), NNparams,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
+
+    #C is the inverse of regularization strength.  Default is 1.
+        #alpha (parameter in SGD and Ridge) is defined as (2*C)^-1
+    L1params = {'penalty':['l1'], 'C':[.5, 1, 1.5], 'solver':['liblinear']}
+    L1tune = grid_search.GridSearchCV(linear_model.LogisticRegression(), L1params,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
+
+    #larger alpha --> more regularization (larger penalty on complexity term)
+    #In practice, performance did not differ with standardized data
+    if nobs+20 > p:
+        alpha_start = .0001
+    else:
+        alpha_start = .001 #need greater dimension reduction when p>>n 
+    L2params = {'alpha':list(np.linspace(start=alpha_start, stop=2, num=100))}
+    L2tune = grid_search.GridSearchCV(RidgeClassifier(normalize=True), L2params,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
+
+    #l1_ratio of 1 corresponds to L1 penalty (lasso); l1_ratio of 0 gives L2 penalty (ridge)
+        #note: R's the elastic net penalty is [(1-param)/2]L2 + paramL1 
+        #Rather than simply (1-param)L2 + paramL1 as it is here (Tibshironi does as python does) 
+    #alpha is the regularization term coefficient (called lambda in R's glmnet)
+    #Does better with standardized data
+    if nobs+20 > p:
+        alpha_start = .0001
+    else:
+        alpha_start = .001 #need greater dimension reduction when p>>n 
+    ENparams = {'l1_ratio':[0, .15, .3, .5, .7, .85, 1], 'loss':['log'], 'penalty':['elasticnet'],
+                'alpha':list(np.linspace(start=alpha_start, stop=2, num=100)), 
+                'warm_start':[True], 'fit_intercept':[True]} 
+    ENtune = grid_search.GridSearchCV(linear_model.SGDClassifier(), ENparams,
+        score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
+
+    #todo: try ensemble gradient descent
+
+    #uses squared hinge loss by default
+    #C is the inverse regularization path
+    SVMparams = {'penalty':['l2'], 'C':[.5, 1, 1.5], 'fit_intercept':[True]}
+    svmL2tune = grid_search.GridSearchCV(svm.LinearSVC(), SVMparams,
+         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
+
+    #hinge loss and rbf(radial basis function)
+    RBFparams = {'kernel':['rbf'], 'C':[.5, 1, 1.5], 'probability':[True]}
+    svmRBFtune = grid_search.GridSearchCV(svm.SVC(), RBFparams,
+            score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
+     
+    libs=[CART, adaBoost, NNtune] #for testing
+    libnames = []
+    #libs=[mean, CART, centroids, LDA_shrink, myQDA, GBtune, adaBoost, RFtune, 
+    #    NNtune,L1tune, L2tune, ENtune, svmL2tune, svmRBFtune]
+    #libnames=["mean", "CART", "centroids", "LDA.shrink", "QDA", "G.Boost", "adaBoost", "RF", 
+    #    "NN", "logitL1", "logitL2", "E.Net", "svmL2", "svmRBF"]
+    if libnames == []:
+        libnames=[est.__class__.__name__ for est in libs]
+
+    #add feature screen if specified
+    if screen != None:
+        for counter, lib in enumerate(libs):
+            lib = Pipeline([ ('feature_selection', screen), (libnames[counter], lib) ])
+
+    return (libs, libnames)
+
+def results_for_library(X, y, cv_gen, libs, libnames, resultsDF): 
+    """
+        Fit each algorithm in library to data and add performance measures
+        to pandas dataframe (resultsDF)
+    """    
+    for counter, est in enumerate(libs):           
         est.fit(X,y)
-        preds = cross_val_predict_proba(est, X, y, cv_gen)[:, 0]
+        print "Name: " , libnames[counter]
+        if hasattr(est, "best_estimator_"):
+            print "Optimal parameters: " , est.best_estimator_
+        if hasattr(est, "predict_proba"):
+            #exceptions for the algorithms that give results in diff order
+            if est.__class__.__name__ == "SVC" or est.__class__.__name__ == "LDA":
+                preds = cross_val_predict_proba(est, X, y, cv_gen)[:, 0]
+            else:
+                preds = cross_val_predict_proba(est, X, y, cv_gen)[:, 1]
+        else:
+            preds = cross_val_predict(est, X, y, cv_gen)
         out = get_performance_vals(y, preds, libnames[counter], cv_gen, confidence=0.95)
         #merge results together
         resultsDF = pd.concat([resultsDF, out])
-    print "\nCombined results: \n" , resultsDF
-    #sort results by decreasing cvAUC
-    resultsDF.sort(columns=['cvAUC','errRate'], axis=0, ascending=False, inplace=True)
+    return resultsDF
 
-    #print "SL cv predictions: " , SL_preds[:10]
-    #print "\nPerformance results, SL: " , get_performance_vals(y, SL_preds)
-    #print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
-    #print "\nPerformance results, RF: " , get_performance_vals(y, sl.y_pred_cv[:,0])
-
-    #make plots
+def plot_results(resultsDF, plot_title, figName, outDir):
     labels = resultsDF.index.values #array with method labels
     label_pos = np.arange(len(labels))
     measurements = np.array(resultsDF['cvAUC'])
@@ -335,30 +391,95 @@ def main():
     z = stats.norm.ppf(.95)
     SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
            ( np.array(resultsDF['ci_up']) - np.array(resultsDF['cvAUC']) )/z ]
-
-    #use matplotlib defaults
     fig = plt.figure()
     ax = fig.add_subplot(111)
     plt.barh(label_pos, measurements, xerr=SEs, align='center', alpha=0.4)
     plt.yticks(label_pos, labels)
     plt.xlabel('cvAUC')
-    plt.title('Distinguishing OFI from DENV')
-    style.use('ggplot') #alternative 1 -- use defaults that mimic R's ggplot
-    rstyle(ax) #alternative 2 -- gives same result as style.use('ggplot')
-    plt.show()
+    plt.title(plot_title)
+    #style.use('ggplot') #alternative 1 -- use defaults that mimic R's ggplot
+    #rstyle(ax) #alternative 2 -- gives same result as style.use('ggplot')
+    plt.savefig(outDir + figName)
+    plt.show() 
 
-    #alternative 2 -- use seaborn
-    #problem: it seems to want to calculate error bars and not allow me to give them
-    #sns.set(style="white", context="talk")
-    #sns.set(style='ticks', palette='Set2') #prettyplot recommendation
-    #f, ax1 = plt.subplots(1, 1, figsize=(8, 6))
-    #sns.barplot(labels, measurements, ci=SEs, ax=ax1)
-    #ax1.set_ylabel("cvAUC")
-    #sns.despine()
-    #plt.setp(f.axes, yticks=[])
-    #plt.show()
+def main():
+    start_time_overall = time.time()
 
-    #cv_superlearner(sl, X, y, K=2, stratifyCV=True) #currently only returns risks_cv np array
+    ## Choose outcome variable ##
+    outcome = "is.DEN"  
+    #outcome = "is.DHF_DSS"
+    if outcome=="is.DEN":
+        comparison_groups = "OFI vs. DENV using " #will appear in graph title
+        graphFileNamePrefix = "S2_Diagnose_OFI.v.DEN" #use all samples; exclude IR and PCR predictors
+        sample_exclusions = False #whether to exclude samples with initial DHF/DSS diagnosis
+    elif outcome=="is.DHF_DSS":
+        comparison_groups = "DF vs. DHF/DSS using " #will appear in graph title
+        graphFileNamePrefix = "Predict_DF.v.DHFandDSS" #exclude OFI+early DHF/DSS; use all predictors
+        sample_exclusions = True #whether to exclude samples with initial DHF/DSS diagnosis 
+    if (sample_exclusions==True):
+        restrictions = ", DENV patients with non-severe initial Dx"
+    else:
+        restrictions = ""
+    
+    ## Choose list of variables to use in prediction ##
+    predictor_desc = "covarlist_all"
+    #predictor_desc = "covarlist_noUltraX"
+    #predictor_desc = "covarlist_CohortRestrict"
+    #predictor_desc = "covarlist_genOnly"
+    #predictors = ["is.female", "Temperatura","Tos","Albumina"] #for testing
+    predictors = get_predictor_desc(predictor_desc+".txt", outcome)
+    print "Predictors to use:\n" , predictors
+
+    ## Create pandas dataframe with data that was cleaned in R ##
+    df = get_data(inputsDir, "clin24_full_wImputedRF1.txt", sample_exclusions)
+    X = df[predictors].astype(float).values #include only vars we will use and convert to np array
+    #scale data since ridge/elastic net are not equivariant under scaling
+        #other algorithms should be unaffected by scaling
+    X = preprocessing.scale(X) #standardize data (subtract mean, then divide by std) 
+    #In practice, standardization appears to work better than MinMaxScaler
+    #X = preprocessing.MinMaxScaler(feature_range=(0,1)).fit_transform(X) #scale features to a range
+    y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
+    #print "Actual outcomes: " , y[:10]
+    #X, y=datasets.make_classification(n_samples=88, n_features=95) #generate toy data for testing
+
+    ## Select variable screening method (if any) ##
+    numSelect = 5
+    univariate_filter = SelectKBest(feature_selection.f_classif, k=numSelect)
+    #tree_filter = ExtraTreesClassifier().fit(X,y).transform(X).feature_importances_
+    #todo: output avg number of features selected using SVC
+    L1_filter = svm.LinearSVC(C=.01, penalty='l1', dual=False) #small C -> few features selected
+    RFE_filter = feature_selection.RFE(numSelect) #recursive feature elimination
+    #perturb design matrix or sub-sample and count number of times given regressor is selected
+        #mitigates the problem of selecting 1 feature from a group of very correlated ones
+    #L1random_filter = RandomizedLogisticRegression
+
+    ## Build library of classifiers ##
+    myLibrary = build_library( p=len(predictors), nobs=len(y), screen=univariate_filter )
+    libs = myLibrary[0]
+    libnames = myLibrary[1]
+
+    ## Get Super Learner Results ##
+    start_time_cvSL = time.time()
+    cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True, random_state=10)
+    sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+    SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
+    resultsDF = get_performance_vals(y, SL_preds, "Super Learner", cv_gen, confidence=0.95)
+
+    ## Get results for each algorith in library ##
+    resultsDF = results_for_library(X, y, cv_gen, libs, libnames, resultsDF) 
+    print "\nCombined results: \n" , resultsDF
+    #sort results by decreasing cvAUC
+    resultsDF.sort(columns=['cvAUC','errRate'], axis=0, ascending=False, inplace=True)
+    #alternative: could use the predicted values coming from running SL
+    #print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
+    #print "\nPerformance results, RF: " , get_performance_vals(y, sl.y_pred_cv[:,0])
+
+    ## Make plots of results ##
+    plot_title = comparison_groups+predictor_desc+restrictions
+    figName = graphFileNamePrefix + '_' + predictor_desc + '.png'
+    #plot_results(resultsDF, plot_title, figName, outDir)
+    
+    ## Ouput execution time info ##
     log_statement("\ncvSL execution time: {} minutes".format(
         (time.time() - start_time_cvSL)/60. ) ) 
 
