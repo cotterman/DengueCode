@@ -11,11 +11,11 @@ rm(list = ls()) #start with blank slate (clear everything from workspace)
 library(lattice)
 library(ggplot2)
 library(reshape2)
-library(sjPlot)
+#library(sjPlot) #no longer using
 library(chron) #to deal with time values
 library(gtools) #enables smartbind
 #library(SuperLearner) #the CRAN version will sometimes throw errors
-library(devtools)
+#library(devtools) #need to re-install
 #install_github("ecpolley/SuperLearner") #this version corrects bug in CRAN version (last downloaded on 2-6-2015)
 library(SuperLearner) #will load whichever SuperLearner was last installed
 sourceDir <- function(path, trace = TRUE, ...) {
@@ -39,26 +39,25 @@ library(caret) #classification package that runs with SL package
 library(survival)
 library(LogicReg) #Logic regression (to find predictors that are boolean combos of original predictors)
 library(cvAUC)
-#install_github("ledell/cvAUC") #2-28-2015 git pull 
+install_github("ledell/cvAUC") #2-28-2015 git pull 
 library(Hmisc) #allows labeling of data.frame columns (for documentation's sake), and has useful function contents()
 library(xtable)
 library(parallel) #for super learner to make use of multiple cores
 #library(xlsReadWrite) #need newer version of R for this package (NA for 3.1.1 also)
 library(XLConnect) #enables importation of excel worksheets
 library(plyr)
-library(chron)
 
 ###############################################################################
 ########################## Establish directories ##############################
 ###############################################################################
 
 #directory containing code
-#codeDir = "/srv/scratch/carolyn/Dengue_code/" #on Amold from Amold's perspective
-codeDir = "/home/carolyn/temp_Dengue_code/github_dengue/" #on myPC
+#codeDir = "/srv/scratch/ccotter/Dengue_code/" #on Amold from Amold's perspective
+codeDir = "/home/ccotter/temp_Dengue_code/github_dengue/" #on myPC
 
 #select main directory in which to find subfolders containing data and results
-#homeDir = "/srv/scratch/carolyn/" #on Amold from Amold's perspective
-homeDir = "/home/carolyn/dengue_data_and_results_local/" #on my PC (formerly named "dengue_dx_not_backed_up")
+#homeDir = "/srv/scratch/ccotter/" #on Amold from Amold's perspective
+homeDir = "/home/ccotter/dengue_data_and_results_local/" #on my PC (formerly named "dengue_dx_not_backed_up")
 
 clinical_inputsDir = paste(homeDir, "lab_and_clinical_data/Cleaned/", sep="")
 lcmsCO_inputsDir = paste(homeDir, "lcms_data_processed_in_CO/Cleaned/", sep="")
