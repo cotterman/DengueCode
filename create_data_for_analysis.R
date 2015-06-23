@@ -36,7 +36,7 @@ load(paste(outputsDir,"IDs_in_resp_all.RData", sep="")) #loads IDs_in_resp_all
 ###############################################################################
 
 # this function was established in "clean_clinical_data_functions_v2.R"
-clin24_full = clean_clin24_data(clinic_varsD, IDs_in_resp_all) #1726 observations (no restriction based on LCMS presence)
+clin24_full = clean_clin_initial_data(clinic_varsD, IDs_in_resp_all, time_period=24) #1726 observations (no restriction based on LCMS presence)
 
 # drop observations with unknown final dengue dx
 clin24_full_clean = clin24_full[which(!is.na(clin24_full$WHOFinal4cat)),]
