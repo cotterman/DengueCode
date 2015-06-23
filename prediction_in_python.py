@@ -57,7 +57,6 @@ np.random.seed(100)
 inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
 outDir = "/srv/scratch/ccotter/python_out/" #mitra
 
-
 VERBOSE = True
 def log_statement(statement):
     if VERBOSE: print statement
