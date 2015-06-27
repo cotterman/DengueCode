@@ -358,7 +358,7 @@ HospitD_cleaning = function(df, clinic_varsD, clinic_varsH_char, YesNo_varsH_cha
   #View(df[,c("FTM","Fecha_Nac","FIS","age","DaysSick")])
   
   #keep only relevant variables
-  nonclinic_keepervars = c("code","Study","FTM","age","DaysSick", 
+  nonclinic_keepervars = c("code","Study","FTM","FIF","age","DaysSick", 
                            "ClasificacionPrimerDia","ClasificacionFinal", "Res_Final","Fecha_Nac")
   namesH_nonLCMS = as.character(c(clinic_varsH_char, nonclinic_keepervars))
   #drop the one guy who is missing "DaysSick" since this variable is too important
@@ -452,6 +452,7 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   # This should contain "first 12 hr" data from the hospital
   if (time_period==12){
     hospit_raw = read.delim(paste(clinical_inputsDir,"Clinical_first_12hrs_hospital_study.txt", sep=""), header=TRUE, nrows=2000) #1771 obs
+    get_dupIDs(hospit_raw$Code, "code") #no repeated codes (each patient appears only once)
     hospit_raw["code"] = apply(X=hospit_raw, MARGIN = 1, FUN=fcode, var="Code")
     hospit_raw["Epigastralgia"] = NA #will prevent error when this variable is expected
   }
@@ -476,6 +477,7 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   outcomes_hospitD$CareLevelFinal = substr(outcomes_hospitD$CareLevelFinal, start=11, stop=12) #change "Categoria 1", "Categoria 2", "Categoria 3" to "1", "2", "3"
   #reformat the sample ID variable so that it is "ID" followed by 4-digit character variable
   outcomes_hospitD$code = apply(X=outcomes_hospitD, MARGIN = 1, FUN=fcode, var="code")
+  get_dupIDs(outcomes_hospitD$code, "code") #no duplicate patients in this data
   
   #merge with other cleaned hospital data 
   clinical_hospitD_clean = merge(outcomes_hospitD[,c("code","Manejo","CareLevelFinal","WHOFinal4cat","WHORevisedFinal",
@@ -489,7 +491,7 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   #check out data contents
   tabletot(clinical_hospitD_clean, "ClasificacionFinal", "WHOFinal4cat", useNA="always") #sanity check.  Only one mismatch.
   tabletot(clinical_hospitD_clean, "WHO_initial_4cat", "ClasificacionFinal") #sample size for predicting severe dengue
-  clinical_hospitD_clean$WHOFinal4cat = NULL #remove to avoid confusion (will produce it later using ClasificacionFinal and DENV indicator)
+  clinical_hospitD_clean$WHOFinal4cat = NULL #remove this var (from outcomes_hospitD) to avoid confusion (will produce it later using ClasificacionFinal and DENV indicator)
   with(clinical_hospitD_clean, table(WHO12hr4cat, WHO_initial_given)) #Douglas vs Lionel 12 hr indicators mostly match (21 are different with Douglas more sick)
   
   # WHO revised classification (to add, possibly)
@@ -506,6 +508,8 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   #initial clinical info (from first consult) for all cohort patients that were able to be matched to DENV Dx data
   clinic1st_cohort = read.delim(paste(clinical_inputsDir,"Clinical_cohort_first_consult.csv", sep=""), header=TRUE, nrows=10000) #4591 obs
   clinic1st_cohort$code = apply(X=clinic1st_cohort, MARGIN = 1, FUN=fcode, var="Codigo")
+  length(unique(clinic1st_cohort$code)) #2768 unique patients 
+  table(table(clinic1st_cohort$code)) #breakdown of number of repeated patients (1671 appear once while 1097 appear 2 or more times).
   
   #add an indicator for type of study (will need this later when we do the merge)
   clinic1st_cohort["Study"] = "Cohort"
@@ -546,7 +550,7 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   
   #keep only relevant variables and 
   #rename clinical/lab variables to match with names in hospital data
-  nonclinic_keepervars = c("code","Cod_Nin", "Study","FTM","age","DaysSick", "Hospitalizado","TraslHosp_ConsInicial",
+  nonclinic_keepervars = c("code","Cod_Nin", "Study","FTM","FIF","age","DaysSick", "Hospitalizado","TraslHosp_ConsInicial",
                            "ClasificacionFinal", "DENV","Fecha_Nac")
   oldnames_nonLCMS = as.character(c(clinic_varsC_char, nonclinic_keepervars))
   clinic_varsCnew = clinic_varsD[which(clinic_varsD$in.cohort.data==1 & 
@@ -597,6 +601,9 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   #### Merge hospital study data with cohort data and do additional cleaning ####
   ###############################################################################
   
+  #try to find the transferred cohort patients in the hospital data
+  trans = merge(clinical_cohortD_clean, clinical_hospitD_clean, by=c("code","FIF")) #hospit data does not contain transferred patient-episodes
+  
   #Merge using both personID and study type since person ID is not unique across studies (I verified these are diff people)
   #smartbind allows us to have some variables only present in 1 of the datasets (unlike merge function)
   #(rbind insists on each dataframe containing the same variables)
@@ -641,10 +648,11 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   clinical_comboD[which(clinical_comboD$IR=="I"),"IR"] = NA
   
   #create boolean output for ND vs. DEN analysis.  Note that factor gives problem due to inconsistency with level definitions.
-  clinical_comboD$is.DEN = (clinical_comboD$WHOFinal3cat=="DF" | clinical_comboD$WHOFinal3cat=="DHF_DSS")
-  clinical_comboD[which(is.na(clinical_comboD$WHOFinal3cat)),"is.DEN"] = NA
+  clinical_comboD$is.DEN = (clinical_comboD$DENV=="Positivo")
+  #DENV = indeterminados, descartada etc. should correspond to missing values for is.DEN
+  clinical_comboD[which(clinical_comboD$DENV!="Positivo" & clinical_comboD$DENV!="Negativo"),"is.DEN"] = NA
   
-  #create boolean output for NF vs. DHF/DSS analysis with will be NA for ND
+  #create boolean output for DF vs. DHF/DSS analysis with will be NA for ND
   clinical_comboD$is.DHF_DSS = (clinical_comboD$WHOFinal3cat=="DHF_DSS")
   clinical_comboD[which(is.na(clinical_comboD$WHOFinal3cat) | clinical_comboD$WHOFinal3cat=="ND"),"is.DHF_DSS"] = NA
 
@@ -672,6 +680,9 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   clinical_comboD = merge(IDs_in_resp_all, clinical_comboD, by=c("code","Study"), all.y=TRUE)
   clinical_comboD$serum.label <- "Indicates LCMS serum batch number"
   
+  #drop the 3 patients who are under 6 months old (this was the age cut-off used for other publications using hospital data)
+  clinical_comboD = clinical_comboD[which(clinical_comboD$age>=.5),] 
+  
   #see how many DHF/DSS diagnoses there are to predict
   tabletot(clinical_comboD[which(clinical_comboD$Study=="Hospital"),], "WHO_initial_4cat", "WHOFinal4cat", useNA="always") # 118 to predict (not including all cohort patients)
   tabletot(clinical_comboD[which(clinical_comboD$Study=="Cohort"),  ], "WHO_initial_4cat", "WHOFinal4cat", useNA="always") # need initial Dx for cohort
@@ -679,6 +690,12 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   tabletot(clinical_comboD[which(clinical_comboD$Study=="Cohort"),  ], "Hospitalizado","WHOFinal4cat", useNA="always") #all DENV positives are Hospitalizado
   tabletot(clinical_comboD[which(clinical_comboD$Study=="Cohort"),  ], "TraslHosp_ConsInicial","WHOFinal4cat", useNA="always") #no clear correlation with DENV
   tabletot(clinical_comboD[which(clinical_comboD$Study=="Cohort"),  ], "Hospitalizado","serum", useNA="always")
+  
+  #drop obs with unknown final DENV value (Note: patients may still have missing WHOFinal4cat since sometimes disease severity is unknown)
+  clinical_comboD = clinical_comboD[which(!is.na(clinical_comboD$is.DEN)),] #from 6359 obs down to 5876 obs
+  
+  length(unique(clinical_comboD[which(clinical_comboD$Study=="Cohort"), "code"])) #2609 unique patients (of the 4218 cohort obs)
+  table(table(clinical_comboD[which(clinical_comboD$Study=="Cohort"), "code"])) #breakdown of number of repeated patients (1631 appear once,  appear 2+ times).
   
   comment(clinical_comboD) <- "This data contains all clinical/lab/demographic info for data from Nicaragua.  
   Observations with unknown final diagnosis are excluded.  Otherwise, missing values are included and untampered with."

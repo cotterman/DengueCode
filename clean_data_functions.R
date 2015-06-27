@@ -4,7 +4,6 @@ fcode = function(x, var) sprintf("ID%04d",as.numeric(as.character(x[var])))
 
 ### function to give us the duplicated values in input vector
 get_dupIDs = function(vec, vec_name){
-  #verify there are no duplicate code values in either dataset
   t1 = table(vec)
   v1dups = table(t1) 
   if(dim(v1dups)>1){
