@@ -10,6 +10,7 @@ import warnings
 import time
 import pdb #debugger
 import math
+import re #regular expression module
 
 import numpy as np
 import pandas as pd
@@ -52,10 +53,11 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-#inputsDir = "/home/carolyn/dengue_data_and_results_local/intermediate_data/" #home PC
+inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
+outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
 #inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC diff login
-inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
-outDir = "/srv/scratch/ccotter/python_out/" #mitra
+#inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
+#outDir = "/srv/scratch/ccotter/python_out/" #mitra
 
 VERBOSE = True
 def log_statement(statement):
@@ -204,7 +206,7 @@ def get_cvAUC_with_CIs(y, pred_prob, cv_gen, confidence=0.95, method_name=""):
                         index=[method_name]) 
     return cvAUCout
 
-def get_performance_vals(y, pred_prob, method_name, cv_gen, confidence=0.95):
+def get_performance_vals(y, pred_prob, method_name, cv_gen, confidence, startingDF):
     """
         Use actual y and predicted probs to get performance measures
     """
@@ -231,7 +233,9 @@ def get_performance_vals(y, pred_prob, method_name, cv_gen, confidence=0.95):
     cvAUCout = get_cvAUC_with_CIs(y, pred_prob, cv_gen, confidence, method_name)
     #combine results
     myperformance = pd.concat([best_performance, cvAUCout], axis=1)
-    return myperformance
+    #merge results together with the DF that was passed
+    resultsDF = pd.concat([startingDF, myperformance])
+    return resultsDF
 
 def convert_stings_to_categories(df):
     """
@@ -245,18 +249,50 @@ def convert_stings_to_categories(df):
             df[col]=df[col].astype("category")
     return df
 
-def get_data(inputsDir, filename, sample_exclusions):
+def get_data(inputsDir, filename, NoInitialDHF, patient_sample):
     df = pd.read_csv(inputsDir + filename, sep='\t', 
         true_values=["True","Yes"], false_values=["False","No"], na_values=['NaN','NA']) 
     #df["is.DEN"] = df["is.DEN"].astype(int) #ML funcs give predicted probs only for int outcomes
-    df[["is.female"]] = (df[["Sexo"]]=="female") #need this to be True/False binary
-    if (sample_exclusions==True):
+    df[["is.female"]] = (df[["Sexo"]]=="female").astype(int)
+    df[["is.cohort"]] = (df[["Study"]]=="Cohort").astype(int) 
+    if (NoInitialDHF==True):
         df = df[df.WHO12hr4cat!="DSS"] 
         df = df[df.WHO12hr4cat!="DHF"] 
         df = df[df.DENV=="Positivo"] #limit to only DENV positive patients
+    if (patient_sample == "hospital_only"):
+        df = df[df.Study=="Hospital"] #limit to only hospital patients
+    if (patient_sample == "cohort_only"):
+        df = df[df.Study=="Cohort"] #limit to only cohort patients
     print "Number of rows in dataframe: " , df.shape[0], "\n"
     #print "Column names in dataframe: " , list(df.columns.values), "\n" 
     return df
+
+def add_imput_dummies(include_imp_dums, df, predictors):
+    """
+        Find imputation dummies in data that correspond to predictor list
+        Add these to the list of predictors if not redundant with is.cohort indicator
+            If redundant with is.cohort, ensure that is.cohort is in data  
+    """
+    if (include_imp_dums==True):
+        allvars = df.columns.values #np.array
+        imp_found = []
+        for var in allvars:
+            y = re.findall(".+?_imputed", var)
+            assert len(y) in (0,1)
+            if len(y)==1: imp_found.append(y[0])
+        imp_imagine = [var+'_imputed' for var in predictors] 
+        imp_matched = [var for var in imp_found if var in imp_imagine]   
+        #if there are imput vars that are redundant with is.cohort, drop them
+            # and add is.cohort if not already included.  this will improve interpretation of results
+        cohort_imitator = 0
+        for var in imp_matched:
+            if sum((df[[var]].values==df[["is.cohort"]].values)==False)[0] == 0:
+                imp_matched.remove(var) #remove if perfect match
+                cohort_imitator = 1 #keep track of fact that we found a match
+        if cohort_imitator==1:
+            if 'is.cohort' not in imp_matched: imp_matched.append('is.cohort')
+        predictors = predictors + imp_matched    
+    return predictors
 
 def build_library(p, nobs, screen=None):
     """
@@ -265,6 +301,7 @@ def build_library(p, nobs, screen=None):
         nobs in number of observations in data
             The parameters fed to some algorithms (e.g., RandomForest) are functions of p and nobs.
     """
+    print "Number of vars: " , p
 
     #set parameters for GridSearchCV
     n_jobs = 5
@@ -291,7 +328,12 @@ def build_library(p, nobs, screen=None):
 
     #n_estimators is number of trees in forest (R default is 1000)
     #max_features is the number of features to consider when looking for best split
-    RFparams = {'n_estimators':[1000],  'max_features':[ math.ceil(p/3), math.ceil(math.sqrt(p)) ]} 
+    if p < 9:
+        RF_max_features = [ int(math.ceil(math.sqrt(p))) ]
+    else:
+        RF_max_features = [ int(math.ceil(math.sqrt(p))), int(math.ceil(p/3)) ]
+    RFparams = {'n_estimators':[1000],  'max_features': RF_max_features}
+ 
     RFtune = grid_search.GridSearchCV(RandomForestClassifier(), RFparams,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
 
@@ -343,46 +385,98 @@ def build_library(p, nobs, screen=None):
     svmRBFtune = grid_search.GridSearchCV(svm.SVC(), RBFparams,
             score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
      
-    libs=[CART, adaBoost, NNtune] #for testing
-    libnames = []
-    #libs=[mean, CART, centroids, LDA_shrink, myQDA, GBtune, adaBoost, RFtune, 
-    #    NNtune,L1tune, L2tune, ENtune, svmL2tune, svmRBFtune]
-    #libnames=["mean", "CART", "centroids", "LDA.shrink", "QDA", "G.Boost", "adaBoost", "RF", 
-    #    "NN", "logitL1", "logitL2", "E.Net", "svmL2", "svmRBF"]
+    #libs=[CART, adaBoost, NNtune] #for testing
+    #libnames = []
+    libs=[mean, CART, centroids, LDA_shrink, myQDA, GBtune, adaBoost, RFtune, 
+        NNtune,L1tune, L2tune, ENtune, svmL2tune, svmRBFtune]
+    libnames=["mean", "CART", "centroids", "LDA.shrink", "QDA", "G.Boost", "adaBoost", "RF", 
+        "NN", "logitL1", "logitL2", "E.Net", "svmL2", "svmRBF"]
     if libnames == []:
         libnames=[est.__class__.__name__ for est in libs]
 
     #add feature screen if specified
     if screen != None:
         for counter, lib in enumerate(libs):
-            lib = Pipeline([ ('feature_selection', screen), (libnames[counter], lib) ])
+            lib_screened = Pipeline([ ('feature_selection', screen), (libnames[counter], lib) ])
+            libs[counter] = lib_screened
 
     return (libs, libnames)
+
+def get_screen(screenType, screenNum, predictors):
+    """
+        Configure the screen (variable selection method) 
+        for specified screenType and screenNum
+    """
+    if (screenType==None):
+        screenNum = len(predictors)
+        screen = None
+    if (screenType=="univariate"):
+        myscreen = SelectKBest(feature_selection.f_classif, k=screenNum) #works
+    elif (screenType=="L1"):
+        L1_filter = svm.LinearSVC(C=.01, penalty='l1', dual=False) #works #small C -> few selected
+        #todo: output avg number of features selected using SVC
+    elif (screenType=="RFE"):    
+        #RFE first trains estimator using all features and assigns weights to each of them 
+            #(e.g., weights may be the coefficients of a linear model)
+            #features with smallest weights are pruned,
+            #process repeated until desired number of of covars is obtained 
+        #screen = feature_selection.RFE(screenNum) #recursive feature elimination -- todo
+        print "RFE: todo"
+    elif (screenType=="tree"):
+        #screen = ExtraTreesClassifier().fit(X,y).transform(X).feature_importances_ -- todo
+        print "tree screen: todo"
+    elif (screenType=="L1random"):
+        #perturb design matrix or sub-sample and count number of times given regressor is selected
+            #mitigates the problem of selecting 1 feature from a group of very correlated ones
+        #screen = RandomizedLogisticRegression -- todo
+        print "randomL1 screen: todo"
+    return [screen, screenNum]
 
 def results_for_library(X, y, cv_gen, libs, libnames, resultsDF): 
     """
         Fit each algorithm in library to data and add performance measures
         to pandas dataframe (resultsDF)
     """    
-    for counter, est in enumerate(libs):           
+    for counter, est in enumerate(libs): 
+        print "Now fitting " , libnames[counter]       
         est.fit(X,y)
-        print "Name: " , libnames[counter]
         if hasattr(est, "best_estimator_"):
             print "Optimal parameters: " , est.best_estimator_
         if hasattr(est, "predict_proba"):
             #exceptions for the algorithms that give results in diff order
-            if est.__class__.__name__ == "SVC" or est.__class__.__name__ == "LDA":
+            if est.__class__.__name__ == "SVC":
                 preds = cross_val_predict_proba(est, X, y, cv_gen)[:, 0]
             else:
                 preds = cross_val_predict_proba(est, X, y, cv_gen)[:, 1]
         else:
             preds = cross_val_predict(est, X, y, cv_gen)
-        out = get_performance_vals(y, preds, libnames[counter], cv_gen, confidence=0.95)
-        #merge results together
-        resultsDF = pd.concat([resultsDF, out])
+        resultsDF = get_performance_vals(y, preds, libnames[counter], 
+                                    cv_gen, 0.95, resultsDF)
+    return resultsDF
+
+def add_info_and_print(resultsDF, include_imp_dums, screenType, pred_count, 
+                        patient_sample, nobs, FileNamePrefix, predictor_desc, outDir, printme):
+    resultsDF.insert(loc=len(resultsDF.columns), column='include_imp_dums', value=include_imp_dums)
+    resultsDF.insert(loc=len(resultsDF.columns), column='screen_method', value=screenType)
+    resultsDF.insert(loc=len(resultsDF.columns), column='predictor_count', value=pred_count)
+    resultsDF.insert(loc=len(resultsDF.columns), column='patient_sample', value=patient_sample)
+    resultsDF.insert(loc=len(resultsDF.columns), column='n', value=nobs)
+    #sort results by decreasing cvAUC
+    resultsDF.sort(columns=['cvAUC','errRate'], axis=0, ascending=False, inplace=True)
+    print "\nCombined results: \n" , resultsDF
+    #output results to excel file
+    if printme==True:
+        outFileName = FileNamePrefix + '_' + predictor_desc + '.txt'
+        resultsDF.to_csv(outDir+outFileName, sep=",")    
+    #alternative: could use the predicted values coming from running SL
+    #print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
+    #print "\nPerformance results, RF: " , get_performance_vals(y, sl.y_pred_cv[:,0])
     return resultsDF
 
 def plot_results(resultsDF, plot_title, figName, outDir):
+    """
+        Create plots of cvAUC along with error bars
+    """
     labels = resultsDF.index.values #array with method labels
     label_pos = np.arange(len(labels))
     measurements = np.array(resultsDF['cvAUC'])
@@ -409,16 +503,21 @@ def main():
     #outcome = "is.DHF_DSS"
     if outcome=="is.DEN":
         comparison_groups = "OFI vs. DENV using " #will appear in graph title
-        graphFileNamePrefix = "S2_Diagnose_OFI.v.DEN" #use all samples; exclude IR and PCR predictors
-        sample_exclusions = False #whether to exclude samples with initial DHF/DSS diagnosis
+        FileNamePrefix = "OFI.v.DEN" #use all samples; exclude IR and PCR predictors
+        NoInitialDHF = False #whether to exclude samples with initial DHF/DSS diagnosis
     elif outcome=="is.DHF_DSS":
         comparison_groups = "DF vs. DHF/DSS using " #will appear in graph title
-        graphFileNamePrefix = "Predict_DF.v.DHFandDSS" #exclude OFI+early DHF/DSS; use all predictors
-        sample_exclusions = True #whether to exclude samples with initial DHF/DSS diagnosis 
-    if (sample_exclusions==True):
+        FileNamePrefix = "Predict_DF.v.DHFandDSS" #exclude OFI+early DHF/DSS; use all predictors
+        NoInitialDHF = True #whether to exclude samples with initial DHF/DSS diagnosis 
+    if (NoInitialDHF==True):
         restrictions = ", DENV patients with non-severe initial Dx"
     else:
         restrictions = ""
+
+    ## Choose patient sample ##
+    #patient_sample = "all"
+    #patient_sample = "cohort_only"
+    patient_sample = "hospital_only"
     
     ## Choose list of variables to use in prediction ##
     predictor_desc = "covarlist_all"
@@ -427,60 +526,70 @@ def main():
     #predictor_desc = "covarlist_genOnly"
     #predictors = ["is.female", "Temperatura","Tos","Albumina"] #for testing
     predictors = get_predictor_desc(predictor_desc+".txt", outcome)
-    print "Predictors to use:\n" , predictors
+    print "Original predictor list:\n" , predictors
 
     ## Create pandas dataframe with data that was cleaned in R ##
-    df = get_data(inputsDir, "clin24_full_wImputedRF1.txt", sample_exclusions)
-    X = df[predictors].astype(float).values #include only vars we will use and convert to np array
+    df = get_data(inputsDir, "clin12_full_wImputedRF1.txt", NoInitialDHF, patient_sample)
+
+    ## Choose whether to include indicator of clinic type (hospital v cohort) ##
+    include_study_dum = True
+    if patient_sample=="cohort_only" or patient_sample=="hospital_only":
+        include_study_dum = False
+    if (include_study_dum==True):
+        predictors.append("is.cohort")
+
+    ## Choose whether to include imputation dummies ##
+    include_imp_dums = False
+    #modify predictor list so as to include imputation dummies if desired
+    predictors = add_imput_dummies(include_imp_dums, df, predictors)
+    print "Predictors to include, pre-screening:\n" , predictors
+ 
+    ## Choose variable screening method (if any) ##
+    screenType = None #current options: None, "univariate", "L1"
+    screenNum = 5 #applies when screenType != None; else will be ignored
+    screen, pred_count = get_screen(screenType, screenNum, predictors)
+
+    ## Build library of classifiers ##
+    myLibrary = build_library( p=len(predictors), nobs=df.shape[0], screen=screenType)
+    libs = myLibrary[0]
+    libnames = myLibrary[1]
+
+    ## Keep only columns in predictors list, create arrays of scaled variables ##
+    X_prelim = df[predictors].astype(float).values #include only vars we will use and convert to np array
     #scale data since ridge/elastic net are not equivariant under scaling
         #other algorithms should be unaffected by scaling
-    X = preprocessing.scale(X) #standardize data (subtract mean, then divide by std) 
-    #In practice, standardization appears to work better than MinMaxScaler
-    #X = preprocessing.MinMaxScaler(feature_range=(0,1)).fit_transform(X) #scale features to a range
+        #In practice, standardization appears to work better than MinMaxScaler
+        #X = preprocessing.MinMaxScaler(feature_range=(0,1)).fit_transform(X) #scale features to a range
+    X = preprocessing.scale(X_prelim) #standardize data (subtract mean, then divide by std) 
     y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
     #print "Actual outcomes: " , y[:10]
     #X, y=datasets.make_classification(n_samples=88, n_features=95) #generate toy data for testing
 
-    ## Select variable screening method (if any) ##
-    numSelect = 5
-    univariate_filter = SelectKBest(feature_selection.f_classif, k=numSelect)
-    #tree_filter = ExtraTreesClassifier().fit(X,y).transform(X).feature_importances_
-    #todo: output avg number of features selected using SVC
-    L1_filter = svm.LinearSVC(C=.01, penalty='l1', dual=False) #small C -> few features selected
-    RFE_filter = feature_selection.RFE(numSelect) #recursive feature elimination
-    #perturb design matrix or sub-sample and count number of times given regressor is selected
-        #mitigates the problem of selecting 1 feature from a group of very correlated ones
-    #L1random_filter = RandomizedLogisticRegression
-
-    ## Build library of classifiers ##
-    myLibrary = build_library( p=len(predictors), nobs=len(y), screen=univariate_filter )
-    libs = myLibrary[0]
-    libnames = myLibrary[1]
-
-    ## Get Super Learner Results ##
-    start_time_cvSL = time.time()
+    ## Get Predictions ##
     cv_gen = cv.StratifiedKFold(y, n_folds=2, shuffle=True, random_state=10)
-    sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-    SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
-    resultsDF = get_performance_vals(y, SL_preds, "Super Learner", cv_gen, confidence=0.95)
-
-    ## Get results for each algorith in library ##
+    resultsDF = pd.DataFrame() #empty df to hold results
+    # Super Learner
+    start_time_cvSL = time.time()
+    #sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+    #SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
+    #resultsDF = get_performance_vals(y, SL_preds, "Super Learner", cv_gen, 0.95, resultsDF)
+    end_time_cvSL = time.time()
+    # Results for each algorith in library
     resultsDF = results_for_library(X, y, cv_gen, libs, libnames, resultsDF) 
-    print "\nCombined results: \n" , resultsDF
-    #sort results by decreasing cvAUC
-    resultsDF.sort(columns=['cvAUC','errRate'], axis=0, ascending=False, inplace=True)
-    #alternative: could use the predicted values coming from running SL
-    #print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
-    #print "\nPerformance results, RF: " , get_performance_vals(y, sl.y_pred_cv[:,0])
+
+    ## Add columns with additional methods info, print results to text file ##
+    resultsDF = add_info_and_print(resultsDF, include_imp_dums, screenType, pred_count, 
+                        patient_sample, df.shape[0], 
+                        FileNamePrefix, predictor_desc, outDir, printme=True)
 
     ## Make plots of results ##
     plot_title = comparison_groups+predictor_desc+restrictions
-    figName = graphFileNamePrefix + '_' + predictor_desc + '.png'
-    #plot_results(resultsDF, plot_title, figName, outDir)
+    figName = FileNamePrefix + '_' + predictor_desc + '.png'
+    plot_results(resultsDF, plot_title, figName, outDir)
     
     ## Ouput execution time info ##
     log_statement("\ncvSL execution time: {} minutes".format(
-        (time.time() - start_time_cvSL)/60. ) ) 
+        (end_time_cvSL - start_time_cvSL)/60. ) ) 
 
     log_statement("Total execution time: {} minutes".format(
         (time.time() - start_time_overall)/60. ) ) 
