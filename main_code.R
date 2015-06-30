@@ -11,7 +11,10 @@ rm(list = ls()) #start with blank slate (clear everything from workspace)
 library(lattice)
 library(ggplot2)
 library(reshape2)
-#library(sjPlot) #no longer using
+library(sjPlot) 
+library(plotrix)
+
+library(doBy)
 library(chron) #to deal with time values
 library(gtools) #enables smartbind
 #library(SuperLearner) #the CRAN version will sometimes throw errors
@@ -46,6 +49,12 @@ library(parallel) #for super learner to make use of multiple cores
 #library(xlsReadWrite) #need newer version of R for this package (NA for 3.1.1 also)
 library(XLConnect) #enables importation of excel worksheets
 library(plyr)
+
+######## save graph defaults to load if needed ###########
+par.defaults <- par(no.readonly=TRUE)
+save(par.defaults, file="R.default.par.RData")
+load("R.default.par.RData")
+par(par.defaults)
 
 ###############################################################################
 ########################## Establish directories ##############################
@@ -91,6 +100,7 @@ source(paste(codeDir,"create_data_for_analysis.R",sep=""))
 
 # this data was created in "create_data_for_analysis.R" - contains all clinical data (n=1624)
 load(paste(outputsDir,"clin24_full_clean.RData", sep="")) #loads clinical_full_clean
+load(paste(outputsDir,"clin12_full_clean.RData", sep="")) #loads clinical_full_clean
 load(paste(outputsDir,"clinical_full_clean.RData", sep="")) #loads clinical_full_clean
 load(paste(outputsDir,"clinical_D1_clean.RData", sep="")) #loads clinical_D1_clean
 
@@ -130,10 +140,12 @@ source(paste(codeDir,"prediction_functions_v2.R",sep="")) #use debugSource here 
 #### Specify location to place output ####
 #sink(paste(resultsDir,"predictions_clinical_DEN_v9.txt",sep=""), append=FALSE, split=TRUE)
 
+#todo: add option for using binary versions of categorical vars (e.g., Torniquete)
+
 #get list of clinical variables to include in prediction method
 covarlist_all = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
                                     eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
-                                    XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
+                                    XD=clin12_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
 write(covarlist_all, paste(outputsDir,"covarlist_all.txt", sep=""),sep = ",")
 covarlist_CohortRestrict = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
                                                eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,

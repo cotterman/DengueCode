@@ -375,8 +375,8 @@ HospitD_cleaning = function(df, clinic_varsD, clinic_varsH_char, YesNo_varsH_cha
   temp = create_binary_variables(df_prelim) 
   
   #this is the one categorical "general symptom" variable -- not in cohort data
-  temp$is.pulse_rapid = (temp$Pulso=="rapid")
-  temp$is.pulse_strong = (temp$Pulso=="strong")
+  temp$is.pulse_rapid = (temp$Pulso=="R") #new hospit data has R , M, and F but the 24 hr data was coded with "rapid","strong","moderate"
+  temp$is.pulse_strong = (temp$Pulso=="F")
   temp[which(is.na(temp$Pulso)), "is.pulse_rapid"] = NA
   temp[which(is.na(temp$Pulso)), "is.pulse_strong"] = NA
   temp$is.pulse_danger = (temp$Pulso=="R" | temp$Pulso=="N") #danger if rapid or not palpable (#used in DSS classification)
@@ -462,9 +462,28 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
     hospit_raw["code2"] = apply(X=hospit_raw, MARGIN = 1, FUN=fcode, var="code")
     hospit_raw["code"] = hospit_raw["code2"]
   }
+  
+  #change to NA the the stupid 999 values
+  hospit_raw[which(hospit_raw$freq_card==9999),"freq_card"] = NA
+  hospit_raw[which(hospit_raw$Temperatura==9999),"Temperatura"] = NA
+  hospit_raw[which(hospit_raw$Temperatura==99),"Temperatura"] = NA
+  hospit_raw[which(hospit_raw$freq_resp==9999),"freq_resp"] = NA
+  hospit_raw[which(hospit_raw$Hepatomegalia_mm==9999),"Hepatomegalia_mm"] = NA
+  hospit_raw[which(hospit_raw$Esplenomegalia_mm==9999),"Esplenomegalia_mm"] = NA
+  
+  #biologically implausible
+  hospit_raw[which(hospit_raw$TGO_ > 1500),"TGO_"] = NA
+  hospit_raw[which(hospit_raw$TGP_ > 1500),"TGP_"] = NA
+  hospit_raw[which(hospit_raw$BilirrD > 2),"BilirrD"] = NA
+  hospit_raw[which(hospit_raw$Bilirr > 2),"Bilirr"] = NA
+  hospit_raw[which(hospit_raw$CPK_ > 2000),"CPK_"] = NA
+  hospit_raw[which(hospit_raw$Linfo_A > 35),"Linfo_A"] = NA
+  hospit_raw[which(hospit_raw$Eosi > 20),"Eosi"] = NA
+  hospit_raw[which(hospit_raw$HematuriaMicroscopica > 50),"HematuriaMicroscopica"] = NA
+  #hospit_raw[which(hospit_raw$RelA.G > 10),"RelA.G"] = NA #should confirm with Nicaragua
 
   clinical_hospit_prelim = HospitD_cleaning(hospit_raw, clinic_varsD, clinic_varsH_char, YesNo_varsH_char, DxDHF_varsH, DxDSS_varsH)
-  names(clinical_hospit_prelim)[names(clinical_hospit_prelim)=="ClasificacionPrimerDia"] <- "WHO_initial_given"
+  names(clinical_hospit_prelim)[names(clinical_hospit_prelim)=="ClasificacionPrimerDia"] <- "WHO_initial_given" #from Douglas
   #assume for now all patients in data satisfy the DF (suspected dengue) criteria
   clinical_hospit_prelim$WHO_initial_4cat = ifelse(clinical_hospit_prelim$DSS==1,"DSS",ifelse(clinical_hospit_prelim$DHF==1,"DHF","DF")) 
   table(clinical_hospit_prelim$WHO_initial_4cat, clinical_hospit_prelim$WHO_initial_given, useNA="always") 
@@ -562,6 +581,15 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   clinical_cohortD_clean = clinical_cohortD[,oldnames_nonLCMS]
   colnames(clinical_cohortD_clean) = newnames_nonLCMS #rename columns
   
+  #change to NA the the stupid 999 values
+  clinical_cohortD_clean[which(clinical_cohortD_clean$freq_card==9999),"freq_card"] = NA
+  clinical_cohortD_clean[which(clinical_cohortD_clean$Temperatura==9999),"Temperatura"] = NA
+  clinical_cohortD_clean[which(clinical_cohortD_clean$Temperatura==99),"Temperatura"] = NA
+  clinical_cohortD_clean[which(clinical_cohortD_clean$freq_resp==9999),"freq_resp"] = NA
+  #get rid of biologically implausiable values
+  clinical_cohortD_clean[which(clinical_cohortD_clean$Eosi > 20),"Eosi"] = NA
+  clinical_cohortD_clean[which(clinical_cohortD_clean$HematuriaMicroscopica > 50),"HematuriaMicroscopica"] = NA
+  
   #make the PCR variable a factor variable 
   #ND patients get PCR value of 0 and NAs will be given to indeterminants
   clinical_cohortD_clean[which(clinical_cohortD_clean$DENV=="Negativo"),"temp"]=0
@@ -612,7 +640,8 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   #give categorical variables more meaningful labels
   clinical_comboD$Pulso <- factor(clinical_comboD$Pulso, levels = c("F","M","R","N"),
                                   labels = c("strong", "moderate", "rapid","not palpable")) 
-
+  #Nobody had a "not palpable" pulse and keeping this level in there causes problems with RF, so remove it here
+  clinical_comboD$Pulso = factor(as.numeric(clinical_comboD$Pulso), levels=c("1","2","3"), labels=c("strong","moderate","rapid"))
 
   #clunky code due to weird stuff with ClasificacionFinal being a factor variable
   #If DENV="negative" then diagnostico="ND"
@@ -665,12 +694,8 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   #Sexo is already a factor, but we want to make its underlying values 0/1 rather than 1/2
   clinical_comboD[,"Sexo"] = as.numeric(clinical_comboD$Sexo)-1 # now 0 is female, 1 is male
   clinical_comboD[,"Sexo"] = factor(clinical_comboD[,"Sexo"], levels=c(0,1), labels = c("female","male"))
-  
-  #Nobody had a "not palpable" pulse and keeping this level in there causes problems with RF, so remove it here
-  clinical_comboD$Pulso = factor(as.numeric(clinical_comboD$Pulso), levels=c("1","2","3"), labels=c("strong","moderate","rapid"))
 
-  #Nobody had an "indeterminant" IR and keeping this level in there causes problems with RF, so remove it here
-  clinical_comboD$IR = factor(as.numeric(clinical_comboD$IR), levels=c("2","3"), labels=c("primary","secondary"))  
+  clinical_comboD$IR = as.factor(clinical_comboD$IR)   
   
   #this seems like an obvious data entry mistake to me
   clinical_comboD[which(clinical_comboD$Engrosamiento_mm>200),"Engrosamiento_mm"]=NA 
