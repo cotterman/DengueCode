@@ -89,6 +89,7 @@ source(paste(codeDir,"summarize_clinical_functions.R",sep=""))
 
 #info on clinical variables (data types and applicability to various analyses)
 clinic_varsD = readWorksheetFromFile(paste(clinical_inputsDir,"List of clinical variables for analysis_v6.xlsx", sep=""), sheet=1)
+write.table(clinic_varsD, paste(outputsDir,"clinic_varsD.txt", sep=""),sep = ",")
 
 #this takes a bit of time to run (~ 10 min) b/c of the imputing missing values step
 source(paste(codeDir,"create_data_for_analysis.R",sep="")) 
@@ -106,6 +107,7 @@ load(paste(outputsDir,"clinical_D1_clean.RData", sep="")) #loads clinical_D1_cle
 
 # this data was created in "create_data_for_analysis.R" - contains all clinical data with imputed values
 load(paste(outputsDir,"clin24_full_wImputedRF1.RData", sep="")) #loads clin_full_wImputedRF1
+load(paste(outputsDir,"clin12_full_wImputedRF1.RData", sep="")) #loads clin_full_wImputedRF1
 load(paste(outputsDir,"clin_full_wImputedRF1.RData", sep="")) #loads clin_full_wImputedRF1
 
 # this data was created in "create_data_for_analysis.R" - contains mass hunter LCMS combined with clinical

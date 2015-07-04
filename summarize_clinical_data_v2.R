@@ -10,6 +10,7 @@ tableau20 = cbind(rgb(31/255, 119/255, 180/255), rgb(174/255, 199/255, 232/255),
              rgb(227/255, 119/255, 194/255), rgb(247/255, 182/255, 210/255), rgb(127/255, 127/255, 127/255), rgb(199/255, 199/255, 199/255),  
              rgb(188/255, 189/255, 34/255), rgb(219/255, 219/255, 141/255), rgb(23/255, 190/255, 207/255), rgb(158/255, 218/255, 229/255)) 
 n = 20
+par(mfrow=c(1,1))
 pie(rep(1,n), col=tableau20, main="tableau20") #view color wheel
 
 
@@ -162,100 +163,6 @@ varinfo[which(varinfo$Use.in.DF.vs.DHF.DSS.prediction!=1),c("variable.name.in.fi
 varinfo[which(varinfo$Use.in.ND.vs.DEN.prediction!=1),c("variable.name.in.final.data","Variable.Category")]
 
 
-###############################################################################
-############## Missingness explorations for the D #############################
-###############################################################################
-
-## missingness
-# "42 variables never missing for any of the hospital patients while 10 variables are never missing across the combined data"
-df = dh #toggle this
-var_missCount = sapply(df[varlist], function(x) sum(is.na(x)))
-table(var_missCount)
-var_nomissCount = sapply(df[varlist], function(x) sum(!is.na(x)))
-table(var_nomissCount)
-#variables with no missings
-var_noMiss = c(as.character(varlist[var_missCount==0])) 
-length(var_noMiss) 
-varinfo[which(varinfo$variable.name.in.final.data %in% var_noMiss==T), c("CC_name","variable.name.in.final.data","Variable.Category")]
-#variables with some missings 
-var_someMiss = c(as.character(varlist[var_missCount>0]))
-length(var_someMiss)
-
-var_someMiss_info = varinfo[which(varinfo$variable.name.in.final.data %in% var_someMiss==T), c("variable.name.in.final.data","Variable.Category")]
-var_someMiss_gen = c(as.character(var_someMiss_info[which(var_someMiss_info$Variable.Category=="Demographics/Gen Info" | 
-                                             var_someMiss_info$Variable.Category=="Gen Sign/Symptom" | 
-                                               var_someMiss_info$Variable.Category=="Laboratory-General" |
-                                             var_someMiss_info$Variable.Category=="Hem Sign/Symptom"),c("variable.name.in.final.data")]))
-var_someMiss_lab = c(as.character(var_someMiss_info[which(var_someMiss_info$Variable.Category=="Laboratory-Clinical lab" | 
-                                                          var_someMiss_info$Variable.Category=="Laboratory-Virological" |
-                                                          var_someMiss_info$Variable.Category=="Laboratory-Urine analysis"),c("variable.name.in.final.data")]))
-var_someMiss_ultraX = c(as.character(var_someMiss_info[which(var_someMiss_info$Variable.Category=="Laboratory-Ultrasound" | 
-                                                            var_someMiss_info$Variable.Category=="Laboratory-Ultrasound and X-ray" | 
-                                                            var_someMiss_info$Variable.Category=="Laboratory-X ray"),c("variable.name.in.final.data")]))
-table(df[which(df$WHOFinal4cat!="ND"),"IR"], useNA=c("always")) #missing 37/964
-table(df[which(df$WHOFinal4cat!="ND"),"PCR"], useNA=c("always")) #missing 131/964
-
-## graphs of number of missing values per variable, organized by variable category ##
-
-#general cat
-named_vals = as.data.frame(var_missCount[var_someMiss_gen])
-named_vals$variable.name.in.final.data = rownames(named_vals)
-named_vals$val = var_missCount[var_someMiss_gen]
-namefinder = merge(named_vals, varinfo[,c("CC_name","variable.name.in.final.data")], by="variable.name.in.final.data")
-toplot = namefinder[order(namefinder$val),]
-#plot
-png(paste(resultsDir,"Clinical_vars_missingness_gen_hospit.png", sep=""), width=800, height=500)
-par(mfrow=c(1,1), las=1, cex=2, mar=c(5, 10, 4, 2) + 0.1) # make label text perpendicular to axis
-barplot(toplot$val, names.arg=toplot$CC_name, horiz=T, beside=T, col=rgb(44/255, 160/255, 44/255,.5), main="", xlim=c(0,nrow(df)))
-dev.off()
-
-#blood and urine lab
-named_vals = as.data.frame(var_missCount[var_someMiss_lab])
-named_vals$variable.name.in.final.data = rownames(named_vals)
-named_vals$val = var_missCount[var_someMiss_lab]
-namefinder = merge(named_vals, varinfo[,c("CC_name","variable.name.in.final.data")], by="variable.name.in.final.data")
-toplot = namefinder[order(namefinder$val),]
-#plot
-png(paste(resultsDir,"Clinical_vars_missingness_bloodlab_hospit.png", sep=""), width=800, height=1000)
-par(mfrow=c(1,1), las=1, cex=2.2, mar=c(5, 10, 4, 2) + 0.1) # make label text perpendicular to axis
-barplot(toplot$val, names.arg=toplot$CC_name, horiz=T, beside=T, col=rgb(0,0,1,.5), main="", xlim=c(0,nrow(df)))
-dev.off()
-
-#ultra sound and x-ray
-named_vals = as.data.frame(var_missCount[var_someMiss_ultraX])
-named_vals$variable.name.in.final.data = rownames(named_vals)
-named_vals$val = var_missCount[var_someMiss_ultraX]
-namefinder = merge(named_vals, varinfo[,c("CC_name","variable.name.in.final.data")], by="variable.name.in.final.data")
-toplot = namefinder[order(namefinder$val),]
-#plot
-png(paste(resultsDir,"Clinical_vars_missingness_ultraX_hospit.png", sep=""), width=800, height=500)
-par(mfrow=c(1,1), las=1, cex=2.2, mar=c(5, 10, 4, 2) + 0.1) # make label text perpendicular to axis
-barplot(toplot$val, names.arg=toplot$CC_name, horiz=T, beside=T, col=rgb(0,0,1,.5), main="", xlim=c(0,nrow(df)))
-dev.off()
-
-
-#Variables available per patient
-#hospit
-patient_nomissCounth = apply(dh[varlist], MARGIN=1, function(x) sum(!is.na(x)))
-playh = table(patient_nomissCounth)
-var_counts_decreasingh = sort(names(playh), decreasing=TRUE)
-cumsum(play[var_counts_decreasingh])
-#cohort
-patient_nomissCountc = apply(dc[varlist], MARGIN=1, function(x) sum(!is.na(x)))
-playc = table(patient_nomissCountc)
-var_counts_decreasingc = sort(names(playc), decreasing=TRUE)
-cumsum(play[var_counts_decreasingc])
-#graph
-png(paste(resultsDir,"Clinical_vars_perPatient_CandH.png", sep=""), width=800, height=500)
-par(mar=c(5,6,4,2)+.1, cex=1.6) #default is  c(5, 4, 4, 2) + 0.1
-plot(y=cumsum(play[var_counts_decreasingh]), x=var_counts_decreasingh, type="s", 
-     col=rgb(0,0,1,1), xlim=c(0,85), ylim=c(0,nrow(dc)),
-     xlab="Number of variables (non-missing)", ylab="Number of observations")
-lines(y=cumsum(play[var_counts_decreasingc]), x=var_counts_decreasingc, type="s", 
-      col=rgb(1,0,0,1), xlab="", ylab="")
-legend(x="topright",legend=c("Hospital","Cohort"), col=c(rgb(0,0,1,1),rgb(1,0,0,1)), 
-       lty=1, bty="n")
-dev.off()
 
 
 ###############################################################################
@@ -343,8 +250,6 @@ toadd = myd[which(myd$names.mean_vals.=="is.torniquete10plus" |
 toadd$CC_name = toadd$names.mean_vals.
 toplot_prelim = rbind(namefinder, toadd)
 toplot = toplot_prelim[order(toplot_prelim$mean_vals),]
-#todo: sort in order of mean value 
-#todo: create better names to display (cc_name)
 #graph
 plot.new()
 png(paste(resultsDir,"General_hemorrhage_binary_hospit.png", sep=""), width=800, height=800)
@@ -418,6 +323,102 @@ bplt = barplot(toplot$mean_vals, horiz=T, names.arg=toplot$CC_name, xlim=c(0,1),
 axis(side=1, at=seq(0,1,.2), las=0) #this is how I got x-axis labels to be parallel
 text(x=toplot$mean_vals+0.08, y=bplt, labels = sprintf("%.3f",toplot$mean_vals), xpd=TRUE) #add value labels to bars
 dev.off()
+
+###############################################################################
+############## Missingness explorations for the D #############################
+###############################################################################
+
+## missingness
+# "42 variables never missing for any of the hospital patients while 10 variables are never missing across the combined data"
+df = dh #toggle this
+var_missCount = sapply(df[varlist], function(x) sum(is.na(x)))
+table(var_missCount)
+var_nomissCount = sapply(df[varlist], function(x) sum(!is.na(x)))
+table(var_nomissCount)
+#variables with no missings
+var_noMiss = c(as.character(varlist[var_missCount==0])) 
+length(var_noMiss) 
+varinfo[which(varinfo$variable.name.in.final.data %in% var_noMiss==T), c("CC_name","variable.name.in.final.data","Variable.Category")]
+#variables with some missings 
+var_someMiss = c(as.character(varlist[var_missCount>0]))
+length(var_someMiss)
+
+var_someMiss_info = varinfo[which(varinfo$variable.name.in.final.data %in% var_someMiss==T), c("variable.name.in.final.data","Variable.Category")]
+var_someMiss_gen = c(as.character(var_someMiss_info[which(var_someMiss_info$Variable.Category=="Demographics/Gen Info" | 
+                                                            var_someMiss_info$Variable.Category=="Gen Sign/Symptom" | 
+                                                            var_someMiss_info$Variable.Category=="Laboratory-General" |
+                                                            var_someMiss_info$Variable.Category=="Hem Sign/Symptom"),c("variable.name.in.final.data")]))
+var_someMiss_lab = c(as.character(var_someMiss_info[which(var_someMiss_info$Variable.Category=="Laboratory-Clinical lab" | 
+                                                            var_someMiss_info$Variable.Category=="Laboratory-Virological" |
+                                                            var_someMiss_info$Variable.Category=="Laboratory-Urine analysis"),c("variable.name.in.final.data")]))
+var_someMiss_ultraX = c(as.character(var_someMiss_info[which(var_someMiss_info$Variable.Category=="Laboratory-Ultrasound" | 
+                                                               var_someMiss_info$Variable.Category=="Laboratory-Ultrasound and X-ray" | 
+                                                               var_someMiss_info$Variable.Category=="Laboratory-X ray"),c("variable.name.in.final.data")]))
+table(df[which(df$WHOFinal4cat!="ND"),"IR"], useNA=c("always")) #missing 37/964
+table(df[which(df$WHOFinal4cat!="ND"),"PCR"], useNA=c("always")) #missing 131/964
+
+## graphs of number of missing values per variable, organized by variable category ##
+
+#general cat
+named_vals = as.data.frame(var_missCount[var_someMiss_gen])
+named_vals$variable.name.in.final.data = rownames(named_vals)
+named_vals$val = var_missCount[var_someMiss_gen]
+namefinder = merge(named_vals, varinfo[,c("CC_name","variable.name.in.final.data")], by="variable.name.in.final.data")
+toplot = namefinder[order(namefinder$val),]
+#plot
+png(paste(resultsDir,"Clinical_vars_missingness_gen_hospit.png", sep=""), width=800, height=500)
+par(mfrow=c(1,1), las=1, cex=2, mar=c(5, 10, 4, 2) + 0.1) # make label text perpendicular to axis
+barplot(toplot$val, names.arg=toplot$CC_name, horiz=T, beside=T, col=rgb(44/255, 160/255, 44/255,.5), main="", xlim=c(0,nrow(df)))
+dev.off()
+
+#blood and urine lab
+named_vals = as.data.frame(var_missCount[var_someMiss_lab])
+named_vals$variable.name.in.final.data = rownames(named_vals)
+named_vals$val = var_missCount[var_someMiss_lab]
+namefinder = merge(named_vals, varinfo[,c("CC_name","variable.name.in.final.data")], by="variable.name.in.final.data")
+toplot = namefinder[order(namefinder$val),]
+#plot
+png(paste(resultsDir,"Clinical_vars_missingness_bloodlab_hospit.png", sep=""), width=800, height=1000)
+par(mfrow=c(1,1), las=1, cex=2.2, mar=c(5, 10, 4, 2) + 0.1) # make label text perpendicular to axis
+barplot(toplot$val, names.arg=toplot$CC_name, horiz=T, beside=T, col=rgb(44/255, 160/255, 44/255,.5), main="", xlim=c(0,nrow(df)))
+dev.off()
+
+#ultra sound and x-ray
+named_vals = as.data.frame(var_missCount[var_someMiss_ultraX])
+named_vals$variable.name.in.final.data = rownames(named_vals)
+named_vals$val = var_missCount[var_someMiss_ultraX]
+namefinder = merge(named_vals, varinfo[,c("CC_name","variable.name.in.final.data")], by="variable.name.in.final.data")
+toplot = namefinder[order(namefinder$val),]
+#plot
+png(paste(resultsDir,"Clinical_vars_missingness_ultraX_hospit.png", sep=""), width=800, height=500)
+par(mfrow=c(1,1), las=1, cex=2.2, mar=c(5, 10, 4, 2) + 0.1) # make label text perpendicular to axis
+barplot(toplot$val, names.arg=toplot$CC_name, horiz=T, beside=T, col=rgb(44/255, 160/255, 44/255,.5), main="", xlim=c(0,nrow(df)))
+dev.off()
+
+
+#Variables available per patient
+#hospit
+patient_nomissCounth = apply(dh[varlist], MARGIN=1, function(x) sum(!is.na(x)))
+playh = table(patient_nomissCounth)
+var_counts_decreasingh = sort(names(playh), decreasing=TRUE)
+cumsum(play[var_counts_decreasingh])
+#cohort
+patient_nomissCountc = apply(dc[varlist], MARGIN=1, function(x) sum(!is.na(x)))
+playc = table(patient_nomissCountc)
+var_counts_decreasingc = sort(names(playc), decreasing=TRUE)
+cumsum(play[var_counts_decreasingc])
+#graph
+png(paste(resultsDir,"Clinical_vars_perPatient_CandH.png", sep=""), width=800, height=500)
+par(mar=c(5,6,4,2)+.1, cex=1.6) #default is  c(5, 4, 4, 2) + 0.1
+plot(y=cumsum(play[var_counts_decreasingh]), x=var_counts_decreasingh, type="s", 
+     col=rgb(0,0,1,1), xlim=c(0,85), ylim=c(0,nrow(dc)),
+     xlab="Number of variables (non-missing)", ylab="Number of observations")
+lines(y=cumsum(play[var_counts_decreasingc]), x=var_counts_decreasingc, type="s", 
+      col=rgb(1,0,0,1), xlab="", ylab="")
+legend(x="topright",legend=c("Hospital","Cohort"), col=c(rgb(0,0,1,1),rgb(1,0,0,1)), 
+       lty=1, bty="n")
+dev.off()
+
 
 ###############################################################################
 ########################## Scratch code #######################################

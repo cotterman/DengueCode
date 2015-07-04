@@ -280,7 +280,8 @@ create_binary_variables = function(mydata){
   #day of illness categories
   mydata$DaysSick_cat = cut(mydata$DaysSick, c(6,15), right=FALSE)
   
-  mydata$is.FirstInfection = mydata$IR=="primary"
+  mydata$is.firstInfection = (mydata$IR=="primary" | mydata$IR=="P")
+  mydata[which(is.na(mydata$IR)), "is.firstInfection"] = NA 
   
   mydata$is.serotype1 = mydata$PCR==1
   mydata$is.serotype2 = mydata$PCR==2
@@ -290,6 +291,25 @@ create_binary_variables = function(mydata){
   #mydata$is.GallbladderEnlarged = mydata$Engrosamiento_mm>2
   
   return(mydata)
+}
+
+create_hospit_binary_vars = function(temp){
+  
+  #this is the one categorical "general symptom" variable -- not in cohort data
+  temp$is.pulse_rapid = (temp$Pulso=="R" | temp$Pulso=="rapid") 
+  temp$is.pulse_strong = (temp$Pulso=="F" | temp$Pulso=="strong")
+  temp[which(is.na(temp$Pulso)), "is.pulse_rapid"] = NA
+  temp[which(is.na(temp$Pulso)), "is.pulse_strong"] = NA
+  temp$is.pulse_danger = (temp$Pulso=="R" | temp$Pulso=="rapid" | temp$Pulso=="N") #danger if rapid or not palpable (#used in DSS classification)
+  
+  #these are defined according to appearance in definition of DHF -- not in cohort data
+  temp$is.Hypoproteinemia = temp$Proteina_tot<4.2  # <4.2 g/dl 
+  temp[which(temp$age>=2),"is.Hypoproteinemia"] = temp[which(temp$age>=2),"Proteina_tot"]<6 #looser criteria if age>=2 
+  temp$is.Hypoalbuminemia = temp$Albumina<2  # <2 g/dl
+  temp[which(temp$age>=1),"is.Hypoalbuminemia"] = temp[which(temp$age>=1),"Albumina"]<3.5  #looser criteria if age>=1
+  
+  return(temp)
+  
 }
 
 HospitD_cleaning = function(df, clinic_varsD, clinic_varsH_char, YesNo_varsH_char, DxDHF_varsH, DxDSS_varsH){  
@@ -373,19 +393,10 @@ HospitD_cleaning = function(df, clinic_varsD, clinic_varsH_char, YesNo_varsH_cha
   #DHF
   #creates is.torniquete20plus, is.thrombocytopenia, is.Estrechamiento, is.hypotension (among others)
   temp = create_binary_variables(df_prelim) 
+
+  #create binary variables using vars in hospital data but not in cohort data  
+  temp = create_hospit_binary_vars(temp)
   
-  #this is the one categorical "general symptom" variable -- not in cohort data
-  temp$is.pulse_rapid = (temp$Pulso=="R") #new hospit data has R , M, and F but the 24 hr data was coded with "rapid","strong","moderate"
-  temp$is.pulse_strong = (temp$Pulso=="F")
-  temp[which(is.na(temp$Pulso)), "is.pulse_rapid"] = NA
-  temp[which(is.na(temp$Pulso)), "is.pulse_strong"] = NA
-  temp$is.pulse_danger = (temp$Pulso=="R" | temp$Pulso=="N") #danger if rapid or not palpable (#used in DSS classification)
-  
-  #these are defined according to appearance in definition of DHF -- not in cohort data
-  temp$is.Hypoproteinemia = temp$Proteina_tot<4.2  # <4.2 g/dl 
-  temp[which(temp$age>=2),"is.Hypoproteinemia"] = temp[which(temp$age>=2),"Proteina_tot"]<6 #looser criteria if age>=2 
-  temp$is.Hypoalbuminemia = temp$Albumina<2  # <2 g/dl
-  temp[which(temp$age>=1),"is.Hypoalbuminemia"] = temp[which(temp$age>=1),"Albumina"]<3.5  #looser criteria if age>=1
   #DSS definition -- not in cohort data
   temp$is.coldclammy = with(temp, ifelse(ExtremidadesFrias + Palidez + Sudoracion + Escalofrio >0 , 1, 0))
   
@@ -406,7 +417,7 @@ HospitD_cleaning = function(df, clinic_varsD, clinic_varsH_char, YesNo_varsH_cha
   
   #DSS (is.Estrechamiento, is.hypotension, is.pulse_danger, is.coldclammy created in "create_binary_variables")
   temp$DSS = with(temp, ifelse( DHF==1 & (is.Estrechamiento | is.hypotension) & (is.pulse_danger | is.coldclammy | Llenado_Capilar), 1, 0 ))
-  
+
   return(temp)
 }
 
@@ -681,9 +692,9 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   #DENV = indeterminados, descartada etc. should correspond to missing values for is.DEN
   clinical_comboD[which(clinical_comboD$DENV!="Positivo" & clinical_comboD$DENV!="Negativo"),"is.DEN"] = NA
   
-  #create boolean output for DF vs. DHF/DSS analysis with will be NA for ND
+  #create boolean output for DF vs. DHF/DSS analysis (and for DF/OFI vs. DHF/DSS analysis)
   clinical_comboD$is.DHF_DSS = (clinical_comboD$WHOFinal3cat=="DHF_DSS")
-  clinical_comboD[which(is.na(clinical_comboD$WHOFinal3cat) | clinical_comboD$WHOFinal3cat=="ND"),"is.DHF_DSS"] = NA
+  clinical_comboD[which(is.na(clinical_comboD$WHOFinal3cat)),"is.DHF_DSS"] = NA
 
   #convert all yes/no questions into factors (regression algorithms may run suboptimal if coded as numeric)
   YesNo_varsCH_char = c(YesNo_varsH_char, "NAUSEAS","HIPOTERM","CONGNASAL")

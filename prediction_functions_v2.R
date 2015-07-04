@@ -423,8 +423,8 @@ run_predictions = function(clinic_varsD, covarlist, outcome, XD, output_desc, in
   #todo: to get more honest inference, should I imput missing values within the CV step? 
   
   if(outcome=="DF.vs.DHF.DSS"){
-    #drop ND observations 
-    XD = XD[!is.na(XD$is.DHF_DSS),]
+    #drop OFI observations 
+    XD = XD[which(XD$is.DEN==TRUE),]
     #for now, rename DF vs. DHF/DSS outcome to the ND vs. DEN outcome (avoids having to change code)
     XD$is.DEN = XD$is.DHF_DSS
   }

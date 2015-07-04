@@ -47,6 +47,7 @@ clin24_D1_clean = merge(respD1_filter50n[,c("code","Study")], clin24_full_clean,
 
 ## Write this clinical data to file for easy future access ##
 save(clin24_full_clean, file=paste(outputsDir,"clin24_full_clean.RData", sep=""))
+save(clin12_full_clean, file=paste(outputsDir,"clin12_full_clean.RData", sep=""))
 write.table(clin24_full_clean, paste(outputsDir,"clin24_full_clean.txt", sep=""), sep="\t")
 write.table(clin12_full_clean, paste(outputsDir,"clin12_full_clean.txt", sep=""), sep="\t")
 save(clin24_restricted_clean, file=paste(outputsDir,"clin24_restricted_clean.RData", sep=""))
@@ -80,7 +81,8 @@ clin24_full_wImputedRF1$is.pulse_danger = (clin24_full_wImputedRF1$Pulso=="rapid
 save(clin24_full_wImputedRF1, file=paste(outputsDir,"clin24_full_wImputedRF1.RData", sep=""))
 write.table(clin24_full_wImputedRF1, paste(outputsDir,"clin24_full_wImputedRF1.txt", sep=""), sep="\t")
 
-#same as above, but not for the 12-hr data
+#same as above, but not for the 12-hr data -- cohort and hospital together
+  #note: imputation uses only vars that are never missing -- for cohort + hospital this leaves 10 vars
 varlist = get_clinic_var_list(clinic_varsD, outcome="either", 
                               eliminate_vars_with_missings=F, eliminate_constant_vars=T, 
                               eliminate_vars_with_minXnomiss=50,
@@ -92,10 +94,32 @@ clin12_full_wImputedRF1_prelim = impute_missings(XD=clin12_full_clean, vars_to_i
 #note: since missings were imputed for categoricals but not binary equivalents,
 #must create these variables now rather than using the ones already in data
 clin12_full_wImputedRF1 = create_binary_variables(clin12_full_wImputedRF1_prelim)
-clin12_full_wImputedRF1$is.pulse_danger = (clin12_full_wImputedRF1$Pulso=="rapid" | clin12_full_wImputedRF1$Pulso=="not palpable")
+clin12_full_wImputedRF1 = create_hospit_binary_vars(clin12_full_wImputedRF1)
 #write to file
 save(clin12_full_wImputedRF1, file=paste(outputsDir,"clin12_full_wImputedRF1.RData", sep=""))
 write.table(clin12_full_wImputedRF1, paste(outputsDir,"clin12_full_wImputedRF1.txt", sep=""), sep="\t")
+
+
+#now do the imputations using just hospital data (to use all 40-something non-missing vars)
+clin12_hospit_clean = clin12_full_clean[which(clin12_full_clean$Study=="Hospital"),]
+varlist = get_clinic_var_list(clinic_varsD, outcome="either", 
+                              eliminate_vars_with_missings=F, eliminate_constant_vars=T, 
+                              eliminate_vars_with_minXnomiss=50,
+                              XD=clin12_hospit_clean, restrict_to_cohort_vars=F, 
+                              restrict_to_hospit_vars=T,UltraX=T, BloodLab=T)
+#impute missing values and add indicator for imputation 
+clin12_hospit_clean$PCR = droplevels(clin12_hospit_clean$PCR) #get rid of empty factor levels (will cause error)
+clin12_hospit_wImputedRF1_prelim = impute_missings(XD=clin12_hospit_clean, vars_to_impute=varlist, 
+                                                 predictor_vars_prelim=varlist, exclude_miss_vars=T, method="RF")
+#note: since missings were imputed for categoricals but not binary equivalents,
+#must create these variables now rather than using the ones already in data
+clin12_hospit_wImputedRF1 = create_binary_variables(clin12_hospit_wImputedRF1_prelim)
+clin12_hospit_wImputedRF1 = create_hospit_binary_vars(clin12_hospit_wImputedRF1)
+#write to file
+save(clin12_hospit_wImputedRF1, file=paste(outputsDir,"clin12_hospit_wImputedRF1.RData", sep=""))
+write.table(clin12_hospit_wImputedRF1, paste(outputsDir,"clin12_hospit_wImputedRF1.txt", sep=""), sep="\t")
+
+
 
 #verify missings have been imputed
   #sum(is.na(clin_full_wImputedRF1[varlist])) #should be zero
