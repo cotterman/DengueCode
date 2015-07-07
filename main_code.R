@@ -47,6 +47,7 @@ library(Hmisc) #allows labeling of data.frame columns (for documentation's sake)
 library(xtable)
 library(parallel) #for super learner to make use of multiple cores
 #library(xlsReadWrite) #need newer version of R for this package (NA for 3.1.1 also)
+library(rJava)
 library(XLConnect) #enables importation of excel worksheets
 library(plyr)
 

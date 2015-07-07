@@ -339,7 +339,7 @@ HospitD_cleaning = function(df, clinic_varsD, clinic_varsH_char, YesNo_varsH_cha
   
   #make the PCR variable a factor variable (else it will mismatch with cohort data and generate error when merged)
   #also, give ND patients a PCR value of 0.  (NAs will be given to indeterminants)
-  df[which(df$DENV=="Negativo"),"PCR"]=0
+  df[which(df$DENV=="Negativo"),"PCR"]=NA
   df$PCR = factor(x = as.character(df$PCR))
   table(df$PCR)
   
@@ -460,21 +460,26 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   ##################### Data from the hospital study ############################
   ###############################################################################
   
-  # This should contain "first 12 hr" data from the hospital
-  if (time_period==12){
-    hospit_raw = read.delim(paste(clinical_inputsDir,"Clinical_first_12hrs_hospital_study.txt", sep=""), header=TRUE, nrows=2000) #1771 obs
-    get_dupIDs(hospit_raw$Code, "code") #no repeated codes (each patient appears only once)
-    hospit_raw["code"] = apply(X=hospit_raw, MARGIN = 1, FUN=fcode, var="Code")
-    hospit_raw["Epigastralgia"] = NA #will prevent error when this variable is expected
-  }
   # This should contain "first 24 hr" data from the first batch and from some of the 3rd/4th batches
+  hospit_raw24 = read.delim(paste(clinical_inputsDir,"Clinical data_hospital study.txt", sep=""), header=TRUE, nrows=2000) #1650 obs
+  hospit_raw24["code2"] = apply(X=hospit_raw24, MARGIN = 1, FUN=fcode, var="code")
+  hospit_raw24["code"] = hospit_raw24["code2"]
+  
+  # This should contain "first 12 hr" data from the hospital
+  hospit_raw12 = read.delim(paste(clinical_inputsDir,"Clinical_first_12hrs_hospital_study.txt", sep=""), header=TRUE, nrows=2000) #1771 obs
+  get_dupIDs(hospit_raw12$Code, "code") #no repeated codes (each patient appears only once)
+  hospit_raw12["code"] = apply(X=hospit_raw12, MARGIN = 1, FUN=fcode, var="Code")
+  
+  if (time_period==12){
+    #analysis expects Epigastralgia to be present -- add it from the 24 hr data since it was absent from 12 hr data 
+      #eliminate merge if given 12hr data update with this variable
+    hospit_raw = merge(hospit_raw12, hospit_raw24[,c("code","Epigastralgia")], by="code", all.x=T)
+  }
   if (time_period==24){
-    hospit_raw = read.delim(paste(clinical_inputsDir,"Clinical data_hospital study.txt", sep=""), header=TRUE, nrows=2000) #1650 obs
-    hospit_raw["code2"] = apply(X=hospit_raw, MARGIN = 1, FUN=fcode, var="code")
-    hospit_raw["code"] = hospit_raw["code2"]
+    hospit_raw = hospit_raw24
   }
   
-  #change to NA the the stupid 999 values
+  #change to NA the stupid 999 values
   hospit_raw[which(hospit_raw$freq_card==9999),"freq_card"] = NA
   hospit_raw[which(hospit_raw$Temperatura==9999),"Temperatura"] = NA
   hospit_raw[which(hospit_raw$Temperatura==99),"Temperatura"] = NA
@@ -482,15 +487,20 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   hospit_raw[which(hospit_raw$Hepatomegalia_mm==9999),"Hepatomegalia_mm"] = NA
   hospit_raw[which(hospit_raw$Esplenomegalia_mm==9999),"Esplenomegalia_mm"] = NA
   
-  #biologically implausible
-  hospit_raw[which(hospit_raw$TGO_ > 1500),"TGO_"] = NA
-  hospit_raw[which(hospit_raw$TGP_ > 1500),"TGP_"] = NA
-  hospit_raw[which(hospit_raw$BilirrD > 2),"BilirrD"] = NA
-  hospit_raw[which(hospit_raw$Bilirr > 2),"Bilirr"] = NA
-  hospit_raw[which(hospit_raw$CPK_ > 2000),"CPK_"] = NA
-  hospit_raw[which(hospit_raw$Linfo_A > 35),"Linfo_A"] = NA
-  hospit_raw[which(hospit_raw$Eosi > 20),"Eosi"] = NA
-  hospit_raw[which(hospit_raw$HematuriaMicroscopica > 50),"HematuriaMicroscopica"] = NA
+  #turn biologically implausible values to missings  
+    # Dr. Narvaez suggested that these numbers were recorded correctly but were from patients who died
+    # However, this data is from day 1 and most of these patients were in care level 2 (not highest level)
+    # I do not think measurements were taken on dead people and those who were really sick should have been given care level 3
+    # I therefore believe that they were incorrectly coded and should be turned to missing 
+        #(rather than kept as-is or turned to highest plausible value)
+  hospit_raw[which(hospit_raw$TGO_ > 1000),"TGO_"] = NA #Dr. Narvaez recommendation
+  hospit_raw[which(hospit_raw$TGP_ > 1000),"TGP_"] = NA #Dr. Narvaez recommendation
+  hospit_raw[which(hospit_raw$BilirrD > 2),"BilirrD"] = NA #approved by Dr. Narvaez 
+  hospit_raw[which(hospit_raw$Bilirr > 2),"Bilirr"] = NA #approved by Dr. Narvaez 
+  hospit_raw[which(hospit_raw$CPK_ > 2000),"CPK_"] = NA #approved by Dr. Narvaez 
+  hospit_raw[which(hospit_raw$Linfo_A > 35),"Linfo_A"] = NA #approved by Dr. Narvaez 
+  hospit_raw[which(hospit_raw$Eosi > 20),"Eosi"] = NA #approved by Dr. Narvaez 
+  hospit_raw[which(hospit_raw$HematuriaMicroscopica > 50),"HematuriaMicroscopica"] = NA#approved by Dr. Narvaez 
   #hospit_raw[which(hospit_raw$RelA.G > 10),"RelA.G"] = NA #should confirm with Nicaragua
 
   clinical_hospit_prelim = HospitD_cleaning(hospit_raw, clinic_varsD, clinic_varsH_char, YesNo_varsH_char, DxDHF_varsH, DxDSS_varsH)
@@ -602,12 +612,12 @@ clean_clin_initial_data = function(clinic_varsD, IDs_in_resp_all, time_period=12
   clinical_cohortD_clean[which(clinical_cohortD_clean$HematuriaMicroscopica > 50),"HematuriaMicroscopica"] = NA
   
   #make the PCR variable a factor variable 
-  #ND patients get PCR value of 0 and NAs will be given to indeterminants
-  clinical_cohortD_clean[which(clinical_cohortD_clean$DENV=="Negativo"),"temp"]=0
+  #ND patients get PCR value of NA and NAs will be given to indeterminants
+  clinical_cohortD_clean[which(clinical_cohortD_clean$DENV=="Negativo"),"temp"]=NA
   clinical_cohortD_clean[which(clinical_cohortD_clean$PCR==1),"temp"]=1
   clinical_cohortD_clean[which(clinical_cohortD_clean$PCR==2),"temp"]=2
   clinical_cohortD_clean[which(clinical_cohortD_clean$PCR==3),"temp"]=3
-  clinical_cohortD_clean[which(clinical_cohortD_clean$PCR==4),"temp"]=4
+  #clinical_cohortD_clean[which(clinical_cohortD_clean$PCR==4),"temp"]=4 #there are no 4s and having empty category causes problems in RFs
   clinical_cohortD_clean$PCR = NULL
   clinical_cohortD_clean$PCR = factor(x = as.character(clinical_cohortD_clean$temp))
   clinical_cohortD_clean$temp = NULL

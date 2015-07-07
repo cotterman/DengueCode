@@ -120,7 +120,7 @@ impute_missings = function(XD, vars_to_impute, predictor_vars_prelim, exclude_mi
   set.seed(200)
   
   #testing
-  #XD = clinical_full_clean
+  #fitmeD = clinical_full_clean
   #vars_to_impute = varlist
   #predictor_vars_prelim = varlist
   #method="RF"
