@@ -75,12 +75,20 @@ class RidgeClassifier(linear_model.RidgeClassifier):
         return predict_proba
 
 def get_colors():
+    """
+        Return list of colors, defined by RGB values.
+        Eventually may want to allow various parameters.
+    """
     # These are the "Tableau 20" colors as RGB.  
-    tableau20 = [(31, 119, 180), (174, 199, 232), (255, 127, 14), (255, 187, 120),  
-                 (44, 160, 44), (152, 223, 138), (214, 39, 40), (255, 152, 150),  
-                 (148, 103, 189), (197, 176, 213), (140, 86, 75), (196, 156, 148),  
-                 (227, 119, 194), (247, 182, 210), (127, 127, 127), (199, 199, 199),  
-                 (188, 189, 34), (219, 219, 141), (23, 190, 207), (158, 218, 229)]  
+        # They are ordered such that the first 10 will give you the tableau10 pallete
+    tableau20 = [(31, 119, 180), (255, 127, 14), (44, 160, 44), (214, 39, 40),
+                 (148, 103, 189), (140, 86, 75), (227, 119, 194), (127, 127, 127),
+                 (188, 189, 34), (23, 190, 207),
+                 (174, 199, 232), (255, 187, 120),  
+                 (152, 223, 138),  (255, 152, 150),  
+                  (197, 176, 213),  (196, 156, 148),  
+                  (247, 182, 210),  (199, 199, 199),  
+                  (219, 219, 141),  (158, 218, 229)]  
       
     # Scale the RGB values to the [0, 1] range, which is the format matplotlib accepts.  
     for i in range(len(tableau20)):  
@@ -374,7 +382,7 @@ def add_imput_dummies(include_imp_dums, df, predictors):
         predictors = predictors + imp_matched    
     return predictors
 
-def build_library(p, nobs, screen=None):
+def build_library(p, nobs, screen=None, testing=False):
     """
         Develop list of prediction functions.
         p is the number of predictors.  
@@ -469,13 +477,15 @@ def build_library(p, nobs, screen=None):
     svmRBFtune = grid_search.GridSearchCV(svm.SVC(), RBFparams,
             score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
      
-    #libs=[CART, adaBoost] #for testing
-    #libnames = []
-    libs=[mean, CART, centroids, LDA_shrink, myQDA, GBtune, adaBoost, RFtune, 
-        NNtune,L1tune, L2tune, ENtune, svmL2tune, svmRBFtune]
-    libnames=["Mean", "CART", "Centroids", "LDA+shrinkage", "QDA", "Gradient Boost", 
-        "AdaBoost", "Random Forests", 
-        "NN", "Logit-L1", "Logit-L2", "Elastic Net", "SVM-L2", "SVM-RBF"]
+    if (testing==True):
+        libs=[CART, adaBoost] #for testing
+        libnames = []
+    else:
+        libs=[mean, CART, centroids, LDA_shrink, myQDA, GBtune, adaBoost, RFtune, 
+            NNtune,L1tune, L2tune, ENtune, svmL2tune, svmRBFtune]
+        libnames=["Mean", "CART", "Centroids", "LDA+shrinkage", "QDA", "Gradient Boost", 
+            "AdaBoost", "Random Forests", 
+            "N.Neighbor", "Logit-L1", "Logit-L2", "Elastic Net", "SVM-L2", "SVM-RBF"]
     if libnames == []:
         libnames=[est.__class__.__name__ for est in libs]
 
@@ -574,7 +584,9 @@ def plot_cvAUC(resultsDF, plot_title, figName, outDir, run_methods):
     plt.show() 
     
 def plot_ROC(y, predDF, figName, outDir):
-    #plot the ROC curves
+    """
+        Plots the ROC curves using actual y and predicted probabilities
+    """
     libnames = predDF.columns.values    
     for counter, libname in enumerate(libnames):
         pred_prob = predDF[libname]
@@ -629,13 +641,15 @@ def main():
     ## Choose whether to exclude OFI patients ##
     NoOFI = False 
 
+    ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
+    NoInitialDHF = True 
+
     if outcome=="is.DEN":
         comparison_groups = "OFI vs. DENV using " #will appear in graph title
         FileNamePrefix = "OFI.v.DEN" #use all samples; exclude IR and PCR predictors
         NoInitialDHF = False #whether to exclude samples with initial DHF/DSS diagnosis
         NoOFI = False
     elif outcome=="is.DHF_DSS":
-        NoInitialDHF = True #whether to exclude samples with initial DHF/DSS diagnosis 
         if NoOFI == True:
             comparison_groups = "DF vs. DHF/DSS using " #will appear in graph title
             FileNamePrefix = "DF.v.DHFDSS"
@@ -656,9 +670,9 @@ def main():
     patient_sample = "hospital_only"
     
     ## Choose list of variables to use in prediction ##
-    #predictor_desc = "covarlist_all"
+    predictor_desc = "covarlist_all"
     #predictor_desc = "covarlist_noUltraX"
-    predictor_desc = "covarlist_CohortRestrict"
+    #predictor_desc = "covarlist_CohortRestrict"
     #predictor_desc = "covarlist_genOnly"
     #predictors = ["is.female", "Temperatura","Tos","Albumina"] #for testing
     predictors = get_predictor_desc(predictor_desc+".txt", outcome, NoOFI)
@@ -693,7 +707,8 @@ def main():
     screen, pred_count = get_screen(screenType, screenNum, predictors)
 
     ## Build library of classifiers ##
-    myLibrary = build_library( p=len(predictors), nobs=df.shape[0], screen=screenType)
+    myLibrary = build_library( p=len(predictors), nobs=df.shape[0], 
+                            screen=screenType, testing=False)
     libs = myLibrary[0]
     libnames = myLibrary[1]
     print "libs: ", libs
@@ -734,7 +749,7 @@ def main():
         #predDF = pd.read_csv(outDir + 'P_' + tableName, sep=',') 
         resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=',') 
 
-    ## Make plots of results ##
+    ## Make hs of results ##
     plot_title = comparison_groups+predictor_desc+restrictions
     figName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.png'
     plot_cvAUC(resultsDF, plot_title="", figName=figName, 
@@ -743,7 +758,7 @@ def main():
     plot_ROC(y, predDF, figName, outDir)
 
     ## Get predictions and performance measures for test (cohort) data ##
-    run_testdata = True
+    run_testdata = False
     if run_testdata == True:
         dfnew = get_data(inputsDir, inputData, 
                         NoInitialDHF, "cohort_only", NoOFI, outcome, predictors, standardize=True)
@@ -752,6 +767,37 @@ def main():
         predDFnew, resultsDFnew = results_for_testset(X, y, Xnew, ynew, 
                                 libs, libnames, sl_folds=5)
         plot_ROC(ynew, predDFnew, "ROCs_testdata", outDir)
+
+    ## Get variable importance measures ##
+
+    # run super learner in absence of each variable separately 
+        # could consider also dropping the corresponding imputation dummy
+        # and with all variables  -- report differences in cvAUC
+    #note: predictor list will include imputation dummies if that option is selected
+    for counter, var in enumerate(predictors):
+        if counter < 2: #for testing
+            predictors_minus1 = predictors.remove(var)
+            Xvim1 = df[predictors_minus1].astype(float).values     
+            cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
+            resultsDFvim1 = pd.DataFrame() #empty df to hold performance measures
+            sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+            SL_predsvim1 = cross_val_predict_proba(sl, Xvim1, y, cv_gen)
+            predDF.insert(loc=len(predDF.columns), column=var, value=SL_predsvim1)
+            resultsDFvim1 = get_performance_vals(y, SL_predsvim1, var, 
+                                            cv_gen, 0.95, resultsDFvim1)
+    ## Add columns with additional methods info, print results to text file ##
+    tableName = 'VIM1_' + FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
+    resultsDF = add_info_and_print(resultsDFvim1, include_imp_dums, screenType,
+            pred_count, patient_sample, df.shape[0], tableName, 
+            outDir, print_results=True)
+
+    # run super learner with each variable separately -- report cvAUC
+
+    # combine with VIMs from R (random forests' measures)
+    VIM_rf = pd.read_csv(inputsDir + 'VIM_rf.txt', sep='\t') 
+
+    # plot VIM results in one graph
+
     
     ## Ouput execution time info ##
     log_statement("Total execution time: {} minutes".format(
