@@ -19,9 +19,11 @@ from pandas.core.categorical import Categorical
 
 import matplotlib.pyplot as plt
 #import matplotlib.pyplot as plt; plt.rcdefaults()
-#import seaborn as sns #for prettier plots
 #from matplotlib import style
 #from matplotlib_style_utils import rstyle
+import matplotlib.lines as mlines
+import seaborn as sns #this will change many graphing parameters for style
+
 
 import scipy as sp
 from scipy import ndimage
@@ -53,11 +55,10 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
-outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
-#inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC diff login
-#inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
-#outDir = "/srv/scratch/ccotter/python_out/" #mitra
+#inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
+#outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
+inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
+outDir = "/users/ccotter/python_out/" #mitra and nandi
 
 VERBOSE = True
 def log_statement(statement):
@@ -382,7 +383,7 @@ def add_imput_dummies(include_imp_dums, df, predictors):
         predictors = predictors + imp_matched    
     return predictors
 
-def build_library(p, nobs, screen=None, testing=False):
+def build_library(p, nobs, screen=None, testing=False, univariate=False):
     """
         Develop list of prediction functions.
         p is the number of predictors.  
@@ -406,7 +407,7 @@ def build_library(p, nobs, screen=None, testing=False):
     #optimal shrinkage is calculated analytically
     LDA_shrink = LDA(solver='lsqr', shrinkage='auto') 
 
-    myQDA = QDA()
+    myQDA = QDA() #produces terrible results - todo: figure out why and add back in
 
     GBparams = {'max_depth':[2,3,4], 'min_samples_split':[2,4], 
         'min_samples_leaf':[1,3],
@@ -476,14 +477,23 @@ def build_library(p, nobs, screen=None, testing=False):
     RBFparams = {'kernel':['rbf'], 'C':[.5, 1, 1.5], 'probability':[True]}
     svmRBFtune = grid_search.GridSearchCV(svm.SVC(), RBFparams,
             score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
+
+    #algorithms that only apply to small p problems (e.g., for univariate VIM)
+    logistic = linear_model.LogisticRegression(penalty=None) #gave errors
+    LDA_noshrink = LDA(shrinkage=None)   
      
     if (testing==True):
         libs=[CART, adaBoost] #for testing
         libnames = []
+    elif (univariate==True):
+        #libs=[mean, CART]
+        #libnames=["Mean","CART"]
+        libs=[mean, CART, LDA_noshrink, myQDA, NNtune]
+        libnames=["Mean","CART","LDA","QDA","N.Neighbor"] 
     else:
-        libs=[mean, CART, centroids, LDA_shrink, myQDA, GBtune, adaBoost, RFtune, 
+        libs=[mean, CART, centroids, LDA_shrink, GBtune, adaBoost, RFtune, 
             NNtune,L1tune, L2tune, ENtune, svmL2tune, svmRBFtune]
-        libnames=["Mean", "CART", "Centroids", "LDA+shrinkage", "QDA", "Gradient Boost", 
+        libnames=["Mean", "CART", "Centroids", "LDA+shrinkage", "Gradient Boost", 
             "AdaBoost", "Random Forests", 
             "N.Neighbor", "Logit-L1", "Logit-L2", "Elastic Net", "SVM-L2", "SVM-RBF"]
     if libnames == []:
@@ -554,11 +564,11 @@ def results_for_library(X, y, cv_gen, libs, libnames, predDF, resultsDF):
                                     cv_gen, 0.95, resultsDF)
     return predDF, resultsDF
 
-def plot_cvAUC(resultsDF, plot_title, figName, outDir, run_methods):
+def plot_cvAUC(resultsDF, plot_title, figName, outDir, run_MainAnalysis):
     """
         Create plots of cvAUC along with error bars
     """
-    if run_methods==True:
+    if run_MainAnalysis==True:
         labels = resultsDF.index.values #array with method labels
     #hacky way to compensate for lack of index values in imported csv -- tofix
     else:
@@ -581,7 +591,7 @@ def plot_cvAUC(resultsDF, plot_title, figName, outDir, run_methods):
     #style.use('ggplot') #alternative 1 -- use defaults that mimic R's ggplot
     #rstyle(ax) #alternative 2 -- gives same result as style.use('ggplot')
     plt.savefig(outDir + 'A_' + figName)
-    plt.show() 
+    #plt.show() 
     
 def plot_ROC(y, predDF, figName, outDir):
     """
@@ -602,7 +612,7 @@ def plot_ROC(y, predDF, figName, outDir):
     plt.ylabel('True positive rate')
     plt.legend(loc='best')
     plt.savefig(outDir + 'C_' + figName)
-    plt.show()
+    #plt.show()
     
 
 def add_info_and_print(resultsDF, include_imp_dums, screenType, pred_count, 
@@ -632,7 +642,8 @@ def main():
 
     ## Choose whether to run methods to obtain performance measures ##
     # if false, then we will instead read results from file (to plot etc.) 
-    run_methods = True
+    run_MainAnalysis = False
+    run_VIM = True
 
     ## Choose outcome variable ##
     outcome = "is.DEN"  
@@ -696,7 +707,7 @@ def main():
 
     ## Choose whether to include imputation dummies ##
         #these imputation dummies will not be standardized 
-    include_imp_dums = False
+    include_imp_dums = False #note: I have never seen imputation dummies improve cvAUC
     #modify predictor list so as to include imputation dummies if desired
     predictors = add_imput_dummies(include_imp_dums, df, predictors)
     print "Predictors to include, pre-screening:\n" , predictors
@@ -707,11 +718,8 @@ def main():
     screen, pred_count = get_screen(screenType, screenNum, predictors)
 
     ## Build library of classifiers ##
-    myLibrary = build_library( p=len(predictors), nobs=df.shape[0], 
+    libs, libnames = build_library( p=len(predictors), nobs=df.shape[0], 
                             screen=screenType, testing=False)
-    libs = myLibrary[0]
-    libnames = myLibrary[1]
-    print "libs: ", libs
     print "libnames: ", libnames
 
     ## Keep only columns in predictors list, create arrays ##
@@ -723,7 +731,7 @@ def main():
     ## Get CV predictions and performance measures##
     #name of text file containing performance measures (to either create or import)
     tableName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
-    if run_methods == True:
+    if run_MainAnalysis == True:
         cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
         predDF = pd.DataFrame() #this will hold predicted probs for all algorithms
         resultsDF = pd.DataFrame() #empty df to hold performance measures
@@ -749,13 +757,13 @@ def main():
         #predDF = pd.read_csv(outDir + 'P_' + tableName, sep=',') 
         resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=',') 
 
-    ## Make hs of results ##
-    plot_title = comparison_groups+predictor_desc+restrictions
-    figName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.png'
-    plot_cvAUC(resultsDF, plot_title="", figName=figName, 
-                outDir=outDir, run_methods=run_methods)
+    ## Make bargraphs of cvAUC results ##
+    #plot_title = comparison_groups+predictor_desc+restrictions
+    #figName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.png'
+    #plot_cvAUC(resultsDF, plot_title="", figName=figName, 
+    #            outDir=outDir, run_MainAnalysis=run_MainAnalysis)
     ## ROC curve plots ##
-    plot_ROC(y, predDF, figName, outDir)
+    #plot_ROC(y, predDF, figName, outDir)
 
     ## Get predictions and performance measures for test (cohort) data ##
     run_testdata = False
@@ -766,37 +774,133 @@ def main():
         ynew = dfnew[outcome].astype(int).values #make outcome 0/1 and convert to np array
         predDFnew, resultsDFnew = results_for_testset(X, y, Xnew, ynew, 
                                 libs, libnames, sl_folds=5)
-        plot_ROC(ynew, predDFnew, "ROCs_testdata", outDir)
+        plot_ROC(ynew, predDFnew, "ROCs_testdata.png", outDir)
 
     ## Get variable importance measures ##
-
-    # run super learner in absence of each variable separately 
-        # could consider also dropping the corresponding imputation dummy
-        # and with all variables  -- report differences in cvAUC
-    #note: predictor list will include imputation dummies if that option is selected
-    for counter, var in enumerate(predictors):
-        if counter < 2: #for testing
-            predictors_minus1 = predictors.remove(var)
-            Xvim1 = df[predictors_minus1].astype(float).values     
-            cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
+        #takes about 8 min per variable when run on Nandi (~11 hr for 85 vars)
+    run_VIM1 = True
+    run_VIM2 = True
+    if run_VIM==True:
+      
+        ## Run super learner in absence of each variable separately ##
+            # (could consider also dropping the corresponding imputation dummy)
+            # and with all variables  -- report differences in cvAUC
+        #note: predictor list will include imputation dummies if that option is selected
+        tableName = 'VIM1_' + FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
+        if run_VIM1==True:
             resultsDFvim1 = pd.DataFrame() #empty df to hold performance measures
-            sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-            SL_predsvim1 = cross_val_predict_proba(sl, Xvim1, y, cv_gen)
-            predDF.insert(loc=len(predDF.columns), column=var, value=SL_predsvim1)
-            resultsDFvim1 = get_performance_vals(y, SL_predsvim1, var, 
-                                            cv_gen, 0.95, resultsDFvim1)
-    ## Add columns with additional methods info, print results to text file ##
-    tableName = 'VIM1_' + FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
-    resultsDF = add_info_and_print(resultsDFvim1, include_imp_dums, screenType,
-            pred_count, patient_sample, df.shape[0], tableName, 
-            outDir, print_results=True)
+            for counter, var in enumerate(predictors):
+                print "VIM1 for: " , var
+                pminus1 = [p for p in predictors if p != var]
+                Xvim1 = df[pminus1].astype(float).values     
+                cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
+                sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+                SL_predsvim1 = cross_val_predict_proba(sl, Xvim1, y, cv_gen)
+                resultsDFvim1 = get_performance_vals(y, SL_predsvim1, var, 
+                                                cv_gen, 0.95, resultsDFvim1)
+            # Add column to hold varnames (currently in index but that created merge problem later)
+            resultsDFvim1['varname'] = resultsDFvim1.index.values
+            # Add columns with additional methods info, print results to text file #
+            resultsDFvim1 = add_info_and_print(resultsDFvim1, include_imp_dums, screenType,
+                    pred_count, patient_sample, df.shape[0], tableName, 
+                    outDir, print_results=True)
+        else:
+            # Read in text file if you do not wish to re-create VIM results
+            resultsDFvim1 = pd.read_csv(outDir + 'R_' + tableName, sep=',')
+        # Rename relevant column with VIM type and drop other columns
+        resultsDFvim1 = resultsDFvim1.rename(columns={'cvAUC': 'SL_VariableDrop'})
+        #scale column to on 0 - 100 scale
+        #0 should correspond to 0 and negatives; 100 should correspond to .5 (theoretical maximum)
+    
 
-    # run super learner with each variable separately -- report cvAUC
+        ## Run super learner with each variable separately -- report cvAUC
+        #use SL library that only includes algorithms that work with 1 predictor
+        libsUni, libnamesUni = build_library( p=len(predictors), nobs=df.shape[0], 
+                            screen=screenType, testing=False, univariate=True)
+        print "univariate libnames: ", libnamesUni
+        tableName = 'VIM2_' + FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
+        if run_VIM2==True:
+            resultsDFvim2 = pd.DataFrame() #empty df to hold performance measures
+            for counter, var in enumerate(predictors):
+                print "VIM2 for: " , var
+                Xvim2 = df[[var]].astype(float).values     
+                cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
+                sl = SuperLearner(libsUni, loss="nloglik", K=5, 
+                                    stratifyCV=True, save_pred_cv=True)
+                SL_predsvim2 = cross_val_predict_proba(sl, Xvim2, y, cv_gen)
+                resultsDFvim2 = get_performance_vals(y, SL_predsvim2, var, 
+                                                cv_gen, 0.95, resultsDFvim2)
+            # Add column to hold varnames (currently in index but that created merge problem later)
+            resultsDFvim2['varname'] = resultsDFvim2.index.values
+            # Add columns with additional methods info, print results to text file #
+            resultsDFvim2 = add_info_and_print(resultsDFvim2, include_imp_dums, screenType,
+                    pred_count, patient_sample, df.shape[0], tableName, 
+                    outDir, print_results=True)
+        else:
+            # Read in text file if you do not wish to re-create VIM results
+            resultsDFvim2 = pd.read_csv(outDir + 'R_' + tableName, sep=',')
+        # Rename relevant column with VIM type and drop other columns
+        resultsDFvim2 = resultsDFvim2.rename(columns={'cvAUC': 'SL_Univariate'})
+        #scale column to on 0 - 100 scale
+        #0 should correspond to <.5; 100 should correspond to 1 (theoretical maximum)
 
-    # combine with VIMs from R (random forests' measures)
-    VIM_rf = pd.read_csv(inputsDir + 'VIM_rf.txt', sep='\t') 
+        ## Read in VIMs from random forests run in R ##
+        VIM_rf = pd.read_csv(inputsDir + 'VIM_rf_noimputs.txt', sep='\t') 
+        VIM_rf = VIM_rf.rename(columns={'variable.name.in.final.data': 'varname'})
+        #scale VIMs to be on scale from 0 to 100
+        #first move negatives to 0 since 0 is as unimportant as you can get (asymptotically)
+        
+        #now multiply each observation by 100/max_value
 
-    # plot VIM results in one graph
+
+        ## Combine VIMs into 1 dataframe ##
+        prelim = pd.merge(resultsDFvim1[['varname','SL_VariableDrop']], VIM_rf, 
+                            on="varname", how="inner", sort=False)
+        resultsVIM = pd.merge(resultsDFvim2[['varname','SL_Univariate']], prelim, 
+                            on="varname", how="inner", sort=False)
+
+        ## Plot VIM results in one graph ##
+        print "to graph: " 
+        print resultsVIM[["varname","RF_OOB","RF_Gini","SL_Univariate","SL_VariableDrop"]]
+        VIMlist = ["RF_OOB", "RF_Gini", "SL_Univariate", "SL_VariableDrop"]
+        #sort by variable category and then by importance value
+        resultsVIM.sort(columns=['CC_broadcat_sort','RF_OOB'], axis=0, 
+            ascending=[False,True], inplace=True)
+        # plot VIM results in one graph
+        positions = np.arange(resultsVIM.shape[0]) + .5
+        #one marker for each VIM
+        mymarkers = ['s','o','^','*'] 
+        #colors to indicate variable category
+        mycolors = get_colors() #sns.color_palette("Set2", 10)
+        clist=[mycolors[catnum] for catnum in resultsVIM['CC_broadcat_sort'].values ]  
+        for counter, VIM in enumerate(VIMlist):
+            #values to plot
+            importances = resultsVIM[VIM]                 
+            #plot of points
+            plt.scatter(importances, positions, marker=mymarkers[counter],
+                color=clist, label=VIM)
+        #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
+        plt.subplots_adjust(left=.2, right=.9, top=.9, bottom=.1)
+        #create legend and labels etc. and save graph
+        plt.xlabel('Importance')
+        plt.xlim(0,100)
+        plt.ylim(0,resultsVIM.shape[0])
+        plt.yticks(positions, np.array(resultsVIM["CC_name"]))
+        #get the coloring of y-axis labels to correspond to variable cost categories
+        [l.set_color(clist[i]) for i,l in enumerate(plt.gca().get_yticklabels())]   
+        #remove the tick marks; they are unnecessary with the tick lines we just plotted.  
+        plt.tick_params(axis="both", which="both", bottom="off", top="off",  
+                        labelbottom="on", left="off", right="off", labelleft="on") 
+        #create a custom legend so I can make the colors gray 
+            #otherwise legend markers will be color of last variable category plotted
+        lhandles = []
+        for counter, VIM in enumerate(VIMlist):
+            hand = mlines.Line2D([], [], fillstyle='full', color='.6', marker=mymarkers[counter], 
+                        linestyle='', markersize=5)
+            lhandles.append(hand)
+        plt.legend((lhandles), (VIMlist))
+        plt.savefig(outDir + 'VIMs_noimputes.png')
+        plt.show()
 
     
     ## Ouput execution time info ##
