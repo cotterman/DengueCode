@@ -47,7 +47,7 @@ library(Hmisc) #allows labeling of data.frame columns (for documentation's sake)
 library(xtable)
 library(parallel) #for super learner to make use of multiple cores
 #library(xlsReadWrite) #need newer version of R for this package (NA for 3.1.1 also)
-library(rJava)
+library(rJava) #must start rstudio from terminal with sudo rstudio for rjava to work
 library(XLConnect) #enables importation of excel worksheets
 library(plyr)
 
@@ -82,7 +82,7 @@ source(paste(codeDir,"clean_data_functions.R",sep=""))
 source(paste(codeDir,"clean_LCMS_data_functions.R",sep=""))
 source(paste(codeDir,"clean_clinical_data_functions_v2.R",sep=""))
 source(paste(codeDir,"summarize_clinical_functions.R",sep=""))
-
+source(paste(codeDir,"prediction_functions_v2.R",sep=""))
 
 ###############################################################################
 ########################### Create data to be used ############################
