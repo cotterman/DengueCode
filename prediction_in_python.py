@@ -55,10 +55,10 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-#inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
-#outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
-inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
-outDir = "/users/ccotter/python_out/" #mitra and nandi
+inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
+outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
+#inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
+#outDir = "/users/ccotter/python_out/" #mitra and nandi
 
 VERBOSE = True
 def log_statement(statement):
@@ -637,13 +637,149 @@ def add_info_and_print(resultsDF, include_imp_dums, screenType, pred_count,
     #print "\nPerformance results, RF: " , get_performance_vals(y, sl.y_pred_cv[:,0])
     return resultsDF
 
+def get_VIM1(predictors, df, y, FileNamePrefix, predictor_desc, patient_sample,
+                    libs, libnames, run_VIM1):
+    """
+        ## Run super learner in absence of each variable separately ##
+        # (could consider also dropping the corresponding imputation dummy)
+        # and with all variables  -- report differences in cvAUC with full model
+        #note: predictor list will include imputation dummies if that option is selected
+    """
+    tableName = 'VIM1_' + FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
+    if run_VIM1==True:
+        resultsDFvim1 = pd.DataFrame() #empty df to hold performance measures
+        for counter, var in enumerate(predictors):
+            print "VIM1 for: " , var
+            pminus1 = [p for p in predictors if p != var]
+            Xvim1 = df[pminus1].astype(float).values     
+            cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
+            sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+            SL_predsvim1 = cross_val_predict_proba(sl, Xvim1, y, cv_gen)
+            resultsDFvim1 = get_performance_vals(y, SL_predsvim1, var, 
+                                            cv_gen, 0.95, resultsDFvim1)
+        # Add results from Super Learner without dropping any variables (for comparison)
+        SL_predsvim1 = cross_val_predict_proba(sl, X, y, cv_gen)
+        resultsDFvim1 = get_performance_vals(y, SL_predsvim1, "Super Learner", 
+                                            cv_gen, 0.95, resultsDFvim1)
+        # Add column to hold varnames 
+            #currently in index but that created merge problem later
+        resultsDFvim1['varname'] = resultsDFvim1.index.values
+        # Add columns with additional methods info, print results to text file #
+        resultsDFvim1 = add_info_and_print(resultsDFvim1, include_imp_dums, screenType,
+                pred_count, patient_sample, df.shape[0], tableName, 
+                outDir, print_results=True)
+    else:
+        # Read in text file if you do not wish to re-create VIM results
+        resultsDFvim1 = pd.read_csv(outDir + 'R_' + tableName, sep=',')
+    # Calculate VIM measure and keep only relevant variables
+    # We want var importance to be 100*(cvAUC_SL_noDrops - cvAUC)
+    resultsDFvim1['cvAUC'] *= 100
+    cvAUC_SL_noDrops = resultsDFvim1.loc[resultsDFvim1['varname']=='Super Learner']['cvAUC'].values
+    resultsDFvim1['SL_VariableDrop'] = resultsDFvim1['cvAUC'] - cvAUC_SL_noDrops
+    resultsDFvim1 = resultsDFvim1[['varname','SL_VariableDrop']]   
+    return resultsDFvim1
+
+
+def get_VIM2(predictors, df, y, FileNamePrefix, predictor_desc, patient_sample, run_VIM2):
+    """
+        ## Run super learner with each variable separately -- report cvAUC 
+        #use SL library that only includes algorithms that work with 1 predictor
+    """
+    libsUni, libnamesUni = build_library( p=len(predictors), nobs=df.shape[0], 
+                        screen=None, testing=False, univariate=True)
+    print "univariate libnames: ", libnamesUni
+    tableName = 'VIM2_' + FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
+    if run_VIM2==True:
+        resultsDFvim2 = pd.DataFrame() #empty df to hold performance measures
+        for counter, var in enumerate(predictors):
+            print "VIM2 for: " , var
+            Xvim2 = df[[var]].astype(float).values     
+            cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
+            sl = SuperLearner(libsUni, loss="nloglik", K=5, 
+                                stratifyCV=True, save_pred_cv=True)
+            SL_predsvim2 = cross_val_predict_proba(sl, Xvim2, y, cv_gen)
+            resultsDFvim2 = get_performance_vals(y, SL_predsvim2, var, 
+                                            cv_gen, 0.95, resultsDFvim2)
+        # Add column to hold varnames 
+            #currently in index but that created merge problem later
+        resultsDFvim2['varname'] = resultsDFvim2.index.values
+        # Add columns with additional methods info, print results to text file #
+        resultsDFvim2 = add_info_and_print(resultsDFvim2, include_imp_dums, screenType,
+                pred_count, patient_sample, df.shape[0], tableName, 
+                outDir, print_results=True)
+    else:
+        # Read in text file if you do not wish to re-create VIM results
+        resultsDFvim2 = pd.read_csv(outDir + 'R_' + tableName, sep=',')
+    # Calculate VIM measure and keep only relevant variables
+    resultsDFvim2['SL_Univariate'] = resultsDFvim2['cvAUC']*100
+    resultsDFvim2 = resultsDFvim2[['varname','SL_Univariate']]
+    return resultsDFvim2
+
+def plot_VIMs(resultsVIM, outDir, figname):
+        #print "to graph: " 
+        #print resultsVIM[["varname","RF_OOB","RF_Gini","SL_Univariate","SL_VariableDrop"]]
+        VIMlist = ["RF_OOB", "RF_Gini", "SL_Univariate", "SL_VariableDrop"]
+        VIM_labels = ["RF - Permutation", "RF - Gini", "SL - Univariate", "SL - Variable Drop"]
+        #sort by variable category and then by importance value
+        resultsVIM.sort(columns=['CC_broadcat_sort','RF_OOB'], axis=0, 
+            ascending=[False,True], inplace=True)
+        # plot VIM results in one graph
+        plt.figure(figsize=(8,10))
+        positions = np.arange(resultsVIM.shape[0]) + .5
+        #symbols and lines for for each VIM
+        mymarkers = ['s','o','^','*'] 
+        mymarkersizes = [5, 5 , 5, 8]
+        mylstyles = ['-','-','--','-'] 
+        mynoimportvals = [0, 0, 50, 0]
+        #colors to indicate variable category
+        colors = ["yellow","green","blue","purple"] #1st color will be ignored
+        mycolors = sns.xkcd_palette(colors) #get_colors() #sns.color_palette("Set2", 10)
+        clist=[mycolors[catnum] for catnum in resultsVIM['CC_broadcat_sort'].values ]  
+        for counter, VIM in enumerate(VIMlist):
+            #values to plot
+            importances = resultsVIM[VIM]                 
+            #plot of points
+            plt.scatter(importances, positions, marker=mymarkers[counter],
+                color=clist, label=VIM)
+            #add verticle lines to indicate no importance
+            plt.axvline(x=mynoimportvals[counter], linestyle = mylstyles[counter], 
+                    ymin=0, ymax=resultsVIM.shape[0], color='.6', linewidth=1)
+        #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
+        plt.subplots_adjust(left=.2, right=.9, top=.9, bottom=.1)
+        #create legend and labels etc. and save graph
+        plt.xlabel('Importance')
+        xmin = min( [min(resultsVIM[column]) for column in VIMlist] ) - 1
+        print "xmin: " , xmin
+        plt.xlim(xmin,100)
+        plt.ylim(0,resultsVIM.shape[0])
+        plt.yticks(positions, np.array(resultsVIM["CC_name"]))
+        plt.tick_params(axis='y', labelsize=8)
+        #get the coloring of y-axis labels to correspond to variable cost categories
+        [l.set_color(clist[i]) for i,l in enumerate(plt.gca().get_yticklabels())]   
+        #remove the tick marks; they are unnecessary with the tick lines we just plotted.  
+        plt.tick_params(axis="both", which="both", bottom="off", top="off",  
+                        labelbottom="on", left="off", right="off", labelleft="on") 
+        #create a custom legend so I can make the colors gray 
+            #otherwise legend markers will be color of last variable category plotted
+        lhandles = []
+        for counter, VIM in enumerate(VIMlist):
+            hand = mlines.Line2D([], [], fillstyle='full', color='.6', linewidth=1,
+                        marker=mymarkers[counter], linestyle = mylstyles[counter],
+                        markersize=mymarkersizes[counter])
+            lhandles.append(hand)
+        plt.legend((lhandles), (VIM_labels))
+        plt.savefig(outDir + figname + '.eps', dpi=1200)
+        plt.show()
+
 def main():
     start_time_overall = time.time()
 
-    ## Choose whether to run methods to obtain performance measures ##
-    # if false, then we will instead read results from file (to plot etc.) 
-    run_MainAnalysis = False
-    run_VIM = True
+    ## Choose which parts of code to run ##
+    run_MainAnalysis = False  # if false, will expect to get results from file
+    run_testdata = False #true means to get predictions for independent test set
+    run_VIM = True  # if false, none of the VIM code will be run
+    run_VIM1 = False # if false, will expect to obtain VIM1 results from file
+    run_VIM2 = False  # if false, will expect to obtain VIM2 results from file
 
     ## Choose outcome variable ##
     outcome = "is.DEN"  
@@ -653,7 +789,7 @@ def main():
     NoOFI = False 
 
     ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
-    NoInitialDHF = True 
+    NoInitialDHF = False 
 
     if outcome=="is.DEN":
         comparison_groups = "OFI vs. DENV using " #will appear in graph title
@@ -679,6 +815,9 @@ def main():
     #patient_sample = "all"
     #patient_sample = "cohort_only"
     patient_sample = "hospital_only"
+
+    ## Choose sample to treat as independent test set (if run_testdata=True) ##
+ 
     
     ## Choose list of variables to use in prediction ##
     predictor_desc = "covarlist_all"
@@ -690,7 +829,7 @@ def main():
     print "Original predictor list:\n" , predictors
 
     ## Choose whether to include indicator of clinic type (hospital v cohort) ##
-    include_study_dum = True
+    include_study_dum = False
     if patient_sample=="cohort_only" or patient_sample=="hospital_only":
         include_study_dum = False
     if (include_study_dum==True):
@@ -766,92 +905,35 @@ def main():
     #plot_ROC(y, predDF, figName, outDir)
 
     ## Get predictions and performance measures for test (cohort) data ##
-    run_testdata = False
     if run_testdata == True:
-        dfnew = get_data(inputsDir, inputData, 
-                        NoInitialDHF, "cohort_only", NoOFI, outcome, predictors, standardize=True)
+        dfnew = get_data(inputsDir, inputData, NoInitialDHF, 
+                "cohort_only", NoOFI, outcome, predictors, standardize=True)
         Xnew = dfnew[predictors].astype(float).values
         ynew = dfnew[outcome].astype(int).values #make outcome 0/1 and convert to np array
         predDFnew, resultsDFnew = results_for_testset(X, y, Xnew, ynew, 
                                 libs, libnames, sl_folds=5)
+        # print predicted probabilities to file (optional)
+        predDFnew.to_csv(outDir+ 'P_' + tableName, sep=",") 
+        ## Add columns with additional methods info, print results to text file ##
+        resultsDFnew = add_info_and_print(resultsDF, include_imp_dums, screenType,
+                    pred_count, patient_sample, df.shape[0], tableName, 
+                    outDir, print_results=True)
         plot_ROC(ynew, predDFnew, "ROCs_testdata.png", outDir)
 
     ## Get variable importance measures ##
         #takes about 8 min per variable when run on Nandi (~11 hr for 85 vars)
-    run_VIM1 = True
-    run_VIM2 = True
     if run_VIM==True:
-      
-        ## Run super learner in absence of each variable separately ##
-            # (could consider also dropping the corresponding imputation dummy)
-            # and with all variables  -- report differences in cvAUC
-        #note: predictor list will include imputation dummies if that option is selected
-        tableName = 'VIM1_' + FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
-        if run_VIM1==True:
-            resultsDFvim1 = pd.DataFrame() #empty df to hold performance measures
-            for counter, var in enumerate(predictors):
-                print "VIM1 for: " , var
-                pminus1 = [p for p in predictors if p != var]
-                Xvim1 = df[pminus1].astype(float).values     
-                cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
-                sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-                SL_predsvim1 = cross_val_predict_proba(sl, Xvim1, y, cv_gen)
-                resultsDFvim1 = get_performance_vals(y, SL_predsvim1, var, 
-                                                cv_gen, 0.95, resultsDFvim1)
-            # Add column to hold varnames (currently in index but that created merge problem later)
-            resultsDFvim1['varname'] = resultsDFvim1.index.values
-            # Add columns with additional methods info, print results to text file #
-            resultsDFvim1 = add_info_and_print(resultsDFvim1, include_imp_dums, screenType,
-                    pred_count, patient_sample, df.shape[0], tableName, 
-                    outDir, print_results=True)
-        else:
-            # Read in text file if you do not wish to re-create VIM results
-            resultsDFvim1 = pd.read_csv(outDir + 'R_' + tableName, sep=',')
-        # Rename relevant column with VIM type and drop other columns
-        resultsDFvim1 = resultsDFvim1.rename(columns={'cvAUC': 'SL_VariableDrop'})
-        #scale column to on 0 - 100 scale
-        #0 should correspond to 0 and negatives; 100 should correspond to .5 (theoretical maximum)
-    
 
-        ## Run super learner with each variable separately -- report cvAUC
-        #use SL library that only includes algorithms that work with 1 predictor
-        libsUni, libnamesUni = build_library( p=len(predictors), nobs=df.shape[0], 
-                            screen=screenType, testing=False, univariate=True)
-        print "univariate libnames: ", libnamesUni
-        tableName = 'VIM2_' + FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
-        if run_VIM2==True:
-            resultsDFvim2 = pd.DataFrame() #empty df to hold performance measures
-            for counter, var in enumerate(predictors):
-                print "VIM2 for: " , var
-                Xvim2 = df[[var]].astype(float).values     
-                cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
-                sl = SuperLearner(libsUni, loss="nloglik", K=5, 
-                                    stratifyCV=True, save_pred_cv=True)
-                SL_predsvim2 = cross_val_predict_proba(sl, Xvim2, y, cv_gen)
-                resultsDFvim2 = get_performance_vals(y, SL_predsvim2, var, 
-                                                cv_gen, 0.95, resultsDFvim2)
-            # Add column to hold varnames (currently in index but that created merge problem later)
-            resultsDFvim2['varname'] = resultsDFvim2.index.values
-            # Add columns with additional methods info, print results to text file #
-            resultsDFvim2 = add_info_and_print(resultsDFvim2, include_imp_dums, screenType,
-                    pred_count, patient_sample, df.shape[0], tableName, 
-                    outDir, print_results=True)
-        else:
-            # Read in text file if you do not wish to re-create VIM results
-            resultsDFvim2 = pd.read_csv(outDir + 'R_' + tableName, sep=',')
-        # Rename relevant column with VIM type and drop other columns
-        resultsDFvim2 = resultsDFvim2.rename(columns={'cvAUC': 'SL_Univariate'})
-        #scale column to on 0 - 100 scale
-        #0 should correspond to <.5; 100 should correspond to 1 (theoretical maximum)
+        #get results from the "variable drop" importance method      
+        resultsDFvim1 = get_VIM1(predictors, df, y, FileNamePrefix, predictor_desc,
+                         patient_sample,libs, libnames, run_VIM1)
+        #get results from the "univariate" importance method
+        resultsDFvim2 = get_VIM2(predictors, df, y, 
+                        FileNamePrefix, predictor_desc, patient_sample,run_VIM2)
 
         ## Read in VIMs from random forests run in R ##
         VIM_rf = pd.read_csv(inputsDir + 'VIM_rf_noimputs.txt', sep='\t') 
         VIM_rf = VIM_rf.rename(columns={'variable.name.in.final.data': 'varname'})
-        #scale VIMs to be on scale from 0 to 100
-        #first move negatives to 0 since 0 is as unimportant as you can get (asymptotically)
-        
-        #now multiply each observation by 100/max_value
-
 
         ## Combine VIMs into 1 dataframe ##
         prelim = pd.merge(resultsDFvim1[['varname','SL_VariableDrop']], VIM_rf, 
@@ -860,48 +942,7 @@ def main():
                             on="varname", how="inner", sort=False)
 
         ## Plot VIM results in one graph ##
-        print "to graph: " 
-        print resultsVIM[["varname","RF_OOB","RF_Gini","SL_Univariate","SL_VariableDrop"]]
-        VIMlist = ["RF_OOB", "RF_Gini", "SL_Univariate", "SL_VariableDrop"]
-        #sort by variable category and then by importance value
-        resultsVIM.sort(columns=['CC_broadcat_sort','RF_OOB'], axis=0, 
-            ascending=[False,True], inplace=True)
-        # plot VIM results in one graph
-        positions = np.arange(resultsVIM.shape[0]) + .5
-        #one marker for each VIM
-        mymarkers = ['s','o','^','*'] 
-        #colors to indicate variable category
-        mycolors = get_colors() #sns.color_palette("Set2", 10)
-        clist=[mycolors[catnum] for catnum in resultsVIM['CC_broadcat_sort'].values ]  
-        for counter, VIM in enumerate(VIMlist):
-            #values to plot
-            importances = resultsVIM[VIM]                 
-            #plot of points
-            plt.scatter(importances, positions, marker=mymarkers[counter],
-                color=clist, label=VIM)
-        #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
-        plt.subplots_adjust(left=.2, right=.9, top=.9, bottom=.1)
-        #create legend and labels etc. and save graph
-        plt.xlabel('Importance')
-        plt.xlim(0,100)
-        plt.ylim(0,resultsVIM.shape[0])
-        plt.yticks(positions, np.array(resultsVIM["CC_name"]))
-        #get the coloring of y-axis labels to correspond to variable cost categories
-        [l.set_color(clist[i]) for i,l in enumerate(plt.gca().get_yticklabels())]   
-        #remove the tick marks; they are unnecessary with the tick lines we just plotted.  
-        plt.tick_params(axis="both", which="both", bottom="off", top="off",  
-                        labelbottom="on", left="off", right="off", labelleft="on") 
-        #create a custom legend so I can make the colors gray 
-            #otherwise legend markers will be color of last variable category plotted
-        lhandles = []
-        for counter, VIM in enumerate(VIMlist):
-            hand = mlines.Line2D([], [], fillstyle='full', color='.6', marker=mymarkers[counter], 
-                        linestyle='', markersize=5)
-            lhandles.append(hand)
-        plt.legend((lhandles), (VIMlist))
-        plt.savefig(outDir + 'VIMs_noimputes.png')
-        plt.show()
-
+        plot_VIMs(resultsVIM, outDir,'VIMs_noimputes')
     
     ## Ouput execution time info ##
     log_statement("Total execution time: {} minutes".format(

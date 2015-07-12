@@ -118,6 +118,9 @@ print "Predicted proba: " , preds[:10]
 #################### Experiment with variable importance ######################
 ###############################################################################
 
+resultsDFvim1 = pd.read_csv(outDir + 'R_VIM1_OFI.v.DEN_covarlist_all_hospital_only.txt', sep=',')
+resultsDFvim2 = pd.read_csv(outDir + 'R_VIM2_OFI.v.DEN_covarlist_all_hospital_only.txt', sep=',')
+
 
 # random forests - out-of-bag permutation method
 

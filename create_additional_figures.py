@@ -152,54 +152,6 @@ def main():
         plt.savefig(outDir + figName)
         plt.show()            
 
-    # combine with VIMs from R (random forests' measures)
-
-VIM_rf = pd.read_csv(inputsDir + 'VIM_rf_noimputs.txt', sep='\t') 
-VIM_rf = VIM_rf.rename(columns={'variable.name.in.final.data': 'varname'})
-resultsDFvim1 = pd.read_csv(outDir + 'R_VIM1_OFI.v.DEN_covarlist_all_hospital_only.txt', sep=',')
-resultsDFvim1 = resultsDFvim1.rename(columns={'cvAUC': 'SL_VariableDrop'})
-
-prelim = pd.merge(resultsDFvim1[['varname','SL_VariableDrop']], VIM_rf, on="varname", how="inner", sort=False)
-
-#sort by variable category and then by importance value
-VIM_rf.sort(columns=['CC_broadcat_sort','RF_OOB'], axis=0, ascending=[False,True], inplace=True)
-# plot VIM results in one graph
-VIMlist = ["RF_OOB","RF_Gini"]
-positions = np.arange(VIM_rf.shape[0]) + .5
-mycolors = sns.color_palette("husl") #get_colors() or sns.color_palette("Set2", 10)
-#one marker for each VIM
-mymarkers = ['s','o','^','+'] 
-#sns.set_style("lineStyles", {u'': u'_draw_nothing'})
-for counter, VIM in enumerate(VIMlist):
-    #values to plot
-    importances = VIM_rf[VIM]
-    #colors to indicate variable category
-    clist = [mycolors[catnum] for catnum in VIM_rf['CC_broadcat_sort'].values ]                   
-    #plot of points
-    plt.scatter(importances, positions, marker=mymarkers[counter],
-        color=clist, label=VIM)
-#make left spacing large enough for labels.  Default is  .1, .9, .9, .1
-plt.subplots_adjust(left=.2, right=.9, top=.9, bottom=.1)
-#create legend and labels etc. and save graph
-plt.xlabel('Importance')
-plt.ylim(0,VIM_rf.shape[0])
-plt.yticks(positions, np.array(VIM_rf["CC_name"]))
-#get the coloring of y-axis labels to correspond to variable cost categories
-[l.set_color(clist[i]) for i,l in enumerate(plt.gca().get_yticklabels())]   
-#remove the tick marks; they are unnecessary with the tick lines we just plotted.  
-plt.tick_params(axis="both", which="both", bottom="off", top="off",  
-                labelbottom="on", left="off", right="off", labelleft="on") 
-#create a custom legend so I can make the colors gray 
-    #otherwise legend markers will be color of last variable category plotted
-lhandles = []
-for counter, VIM in enumerate(VIMlist):
-    hand = mlines.Line2D([], [], fillstyle='full', color='.6', marker=mymarkers[counter], 
-                linestyle='', markersize=5)
-    lhandles.append(hand)
-plt.legend((lhandles), (VIMlist))
-#plt.savefig(outDir + 'VIMs_test.png')
-plt.show()
-
 
 if __name__ == '__main__':
     main()
