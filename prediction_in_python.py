@@ -310,10 +310,15 @@ def convert_stings_to_categories(df):
     return df
 
 def get_data(inputsDir, filename, NoInitialDHF, patient_sample, 
-            NoOFI, outcome, predictors, standardize=True):
+            NoOFI, outcome, predictors_prelim, include_study_dum, 
+            include_imp_dums, imp_dums_only, standardize=True):
     """
         Create pandas dataframe from text file created in R
         Standardize predictor variables (if standardize=True)
+        Eliminate columns according to:
+            predictors_prelim (List of covariates, excluding study and imputation indictors)
+            include_study_dum (True to include is.cohort variable)
+            include_imp_dums (True to include imputation dummy variables)
         Eliminate observations according to:
             NoInitialDHF: True means to exclude patients with initial severe dengue Dx
             patient_sample: "cohort_only","hospital_only" or "both"
@@ -328,10 +333,18 @@ def get_data(inputsDir, filename, NoInitialDHF, patient_sample,
     df_prelim[["is.female"]] = (df_prelim[["Sexo"]]=="female").astype(int)
     df_prelim[["is.cohort"]] = (df_prelim[["Study"]]=="Cohort").astype(int) 
 
+    if (include_study_dum==True):
+        predictors_prelim.append("is.cohort")
+
+    #modify predictor list so as to include imputation dummies if desired
+    predictors = add_imput_dummies(include_imp_dums, imp_dums_only, df_prelim, predictors_prelim)
+
+    #keep only the columns that we want to use in analysis
+    X_prelim = df_prelim[predictors]
+
     #standardize data before removing rows 
         #want standardization to be same for cohort and hospit data 
         #scale data since ridge/elastic net are not equivariant under scaling
-    X_prelim = df_prelim[predictors]
     if (standardize==True):
         X = X_prelim.apply(lambda x: (x - x.mean()) / x.std() )
     else:
@@ -351,15 +364,16 @@ def get_data(inputsDir, filename, NoInitialDHF, patient_sample,
     if (patient_sample == "cohort_only"):
         df = df[df.Study=="Cohort"] #limit to only cohort patients
     print "Number of rows in dataframe: " , df.shape[0], "\n"
-    print "Column names in dataframe: " , list(df.columns.values), "\n" 
+    #print "Column names in dataframe: " , list(df.columns.values), "\n" 
 
-    return df
+    return df, predictors
 
-def add_imput_dummies(include_imp_dums, df, predictors):
+def add_imput_dummies(include_imp_dums, imp_dums_only, df, predictors_prelim):
     """
-        Find imputation dummies in data that correspond to predictor list
-        Add these to the list of predictors if not redundant with is.cohort indicator
+        Find imputation dummies in data that correspond to predictor_prelim list
+        Add these to the list of predictors_prelim if not redundant with is.cohort indicator
             If redundant with is.cohort, ensure that is.cohort is in data  
+        If imp_dums_only is true, then return predictor list containing imputation dummies only
     """
     if (include_imp_dums==True):
         allvars = df.columns.values #np.array
@@ -368,7 +382,7 @@ def add_imput_dummies(include_imp_dums, df, predictors):
             y = re.findall(".+?_imputed", var)
             assert len(y) in (0,1)
             if len(y)==1: imp_found.append(y[0])
-        imp_imagine = [var+'_imputed' for var in predictors] 
+        imp_imagine = [var+'_imputed' for var in predictors_prelim] 
         imp_matched = [var for var in imp_found if var in imp_imagine]   
         #if there are imput vars that are redundant with is.cohort, drop them
             # and add is.cohort if not already included.  
@@ -380,7 +394,13 @@ def add_imput_dummies(include_imp_dums, df, predictors):
                 cohort_imitator = 1 #keep track of fact that we found a match
         if cohort_imitator==1:
             if 'is.cohort' not in imp_matched: imp_matched.append('is.cohort')
-        predictors = predictors + imp_matched    
+        if imp_dums_only==True:
+            predictors = imp_matched
+        else:
+            predictors = predictors_prelim + imp_matched 
+    else:
+        predictors = predictors_prelim
+
     return predictors
 
 def build_library(p, nobs, screen=None, testing=False, univariate=False):
@@ -590,8 +610,9 @@ def plot_cvAUC(resultsDF, plot_title, figName, outDir, run_MainAnalysis):
     fig.tight_layout()
     #style.use('ggplot') #alternative 1 -- use defaults that mimic R's ggplot
     #rstyle(ax) #alternative 2 -- gives same result as style.use('ggplot')
-    plt.savefig(outDir + 'A_' + figName)
+    plt.savefig(outDir + 'A_' + figName + '.eps', dpi=1200)
     #plt.show() 
+    plt.close()
     
 def plot_ROC(y, predDF, figName, outDir):
     """
@@ -611,8 +632,9 @@ def plot_ROC(y, predDF, figName, outDir):
     plt.xlabel('False positive rate')
     plt.ylabel('True positive rate')
     plt.legend(loc='best')
-    plt.savefig(outDir + 'C_' + figName)
+    plt.savefig(outDir + 'C_' + figName + '.eps', dpi=1200)
     #plt.show()
+    plt.close()
     
 
 def add_info_and_print(resultsDF, include_imp_dums, screenType, pred_count, 
@@ -769,15 +791,16 @@ def plot_VIMs(resultsVIM, outDir, figname):
             lhandles.append(hand)
         plt.legend((lhandles), (VIM_labels))
         plt.savefig(outDir + figname + '.eps', dpi=1200)
-        plt.show()
+        #plt.show()
+        plt.close()
 
 def main():
     start_time_overall = time.time()
 
     ## Choose which parts of code to run ##
-    run_MainAnalysis = False  # if false, will expect to get results from file
+    run_MainAnalysis = True  # if false, will expect to get results from file
     run_testdata = False #true means to get predictions for independent test set
-    run_VIM = True  # if false, none of the VIM code will be run
+    run_VIM = False  # if false, none of the VIM code will be run
     run_VIM1 = False # if false, will expect to obtain VIM1 results from file
     run_VIM2 = False  # if false, will expect to obtain VIM2 results from file
 
@@ -791,6 +814,49 @@ def main():
     ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
     NoInitialDHF = False 
 
+    ## Choose patient sample ##
+    #patient_sample = "all"
+    #patient_sample = "cohort_only"
+    patient_sample = "hospital_only"
+
+    ## Choose sample to treat as independent test set (if run_testdata=True) ##
+    testSample = "cohort" #options: "cohort" or "hospital
+    
+    ## Choose list of variables to use in prediction ##
+    predictor_desc = "covarlist_all"
+    #predictor_desc = "covarlist_noUltraX"
+    #predictor_desc = "covarlist_CohortRestrict"
+    #predictor_desc = "covarlist_genOnly"
+    #predictors_prelim = ["is.female", "Temperatura","Tos","Albumina"] #for testing
+    predictors_prelim = get_predictor_desc(predictor_desc+".txt", outcome, NoOFI)
+    print "Original predictor list:\n" , predictors_prelim
+
+    ## Choose whether to include indicator of clinic type (hospital v cohort) ##
+    include_study_dum = False
+    if patient_sample=="cohort_only" or patient_sample=="hospital_only":
+        include_study_dum = False
+
+    ## Choose whether to include imputation dummies ##
+        #these imputation dummies will not be standardized 
+    include_imp_dums = True #note: I have never seen imputation dummies improve cvAUC
+    imp_dums_only = True #true to run with imputation dummies and no other variable values
+
+    ## Choose input data (this data was prepared in R) ##
+    inputData = "clin12_full_wImputedRF1.txt"
+        # "clin12_full_wImputedRF1.txt" - data with imputations using cohort+hospit data
+        # "clin12_hospit_wImputedRF1.txt" - data with imputations using hospit data only
+    ## Create pandas dataframe with data that was cleaned in R ##
+    df, predictors = get_data(inputsDir, inputData, 
+                    NoInitialDHF, patient_sample, NoOFI, outcome, predictors_prelim,
+                    include_study_dum, include_imp_dums, imp_dums_only, standardize=True)
+    print "Predictors to include, pre-screening:\n" , predictors
+ 
+    ## Choose variable screening method (if any) ##
+    screenType = None #current options: None, "univariate", "L1"
+    screenNum = 5 #applies when screenType != None; else will be ignored
+    screen, pred_count = get_screen(screenType, screenNum, predictors)
+
+    ## Ensure consistency btwn parameter settings; develop titles for output
     if outcome=="is.DEN":
         comparison_groups = "OFI vs. DENV using " #will appear in graph title
         FileNamePrefix = "OFI.v.DEN" #use all samples; exclude IR and PCR predictors
@@ -807,58 +873,13 @@ def main():
         restrictions = ", DENV patients with non-severe initial Dx"
     else:
         restrictions = ""
-    
+
     ## choose a different FileNamePrefix for testing to avoid writing over legit results
-    #FileNamePrefix = "Test"
-
-    ## Choose patient sample ##
-    #patient_sample = "all"
-    #patient_sample = "cohort_only"
-    patient_sample = "hospital_only"
-
-    ## Choose sample to treat as independent test set (if run_testdata=True) ##
- 
-    
-    ## Choose list of variables to use in prediction ##
-    predictor_desc = "covarlist_all"
-    #predictor_desc = "covarlist_noUltraX"
-    #predictor_desc = "covarlist_CohortRestrict"
-    #predictor_desc = "covarlist_genOnly"
-    #predictors = ["is.female", "Temperatura","Tos","Albumina"] #for testing
-    predictors = get_predictor_desc(predictor_desc+".txt", outcome, NoOFI)
-    print "Original predictor list:\n" , predictors
-
-    ## Choose whether to include indicator of clinic type (hospital v cohort) ##
-    include_study_dum = False
-    if patient_sample=="cohort_only" or patient_sample=="hospital_only":
-        include_study_dum = False
-    if (include_study_dum==True):
-        predictors.append("is.cohort")
-
-    ## Choose input data (this data was prepared in R) ##
-    inputData = "clin12_full_wImputedRF1.txt"
-        # "clin12_full_wImputedRF1.txt" - data with imputations using cohort+hospit data
-        # "clin12_hospit_wImputedRF1.txt" - data with imputations using hospit data only
-    ## Create pandas dataframe with data that was cleaned in R ##
-    df = get_data(inputsDir, inputData, 
-                    NoInitialDHF, patient_sample, NoOFI, outcome, predictors,
-                    standardize=True)
-
-    ## Choose whether to include imputation dummies ##
-        #these imputation dummies will not be standardized 
-    include_imp_dums = False #note: I have never seen imputation dummies improve cvAUC
-    #modify predictor list so as to include imputation dummies if desired
-    predictors = add_imput_dummies(include_imp_dums, df, predictors)
-    print "Predictors to include, pre-screening:\n" , predictors
- 
-    ## Choose variable screening method (if any) ##
-    screenType = None #current options: None, "univariate", "L1"
-    screenNum = 5 #applies when screenType != None; else will be ignored
-    screen, pred_count = get_screen(screenType, screenNum, predictors)
+    FileNamePrefix = "Exper"
 
     ## Build library of classifiers ##
     libs, libnames = build_library( p=len(predictors), nobs=df.shape[0], 
-                            screen=screenType, testing=False)
+                            screen=screenType, testing=True)
     print "libnames: ", libnames
 
     ## Keep only columns in predictors list, create arrays ##
@@ -897,28 +918,30 @@ def main():
         resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=',') 
 
     ## Make bargraphs of cvAUC results ##
-    #plot_title = comparison_groups+predictor_desc+restrictions
-    #figName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.png'
-    #plot_cvAUC(resultsDF, plot_title="", figName=figName, 
-    #            outDir=outDir, run_MainAnalysis=run_MainAnalysis)
+    plot_title = comparison_groups+predictor_desc+restrictions
+    figName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample
+    plot_cvAUC(resultsDF, plot_title="", figName=figName, 
+                outDir=outDir, run_MainAnalysis=run_MainAnalysis)
     ## ROC curve plots ##
-    #plot_ROC(y, predDF, figName, outDir)
+    plot_ROC(y, predDF, figName, outDir)
 
     ## Get predictions and performance measures for test (cohort) data ##
     if run_testdata == True:
+        myName = FileNamePrefix+'_'+predictor_desc+'_'+testSample+'Test'
         dfnew = get_data(inputsDir, inputData, NoInitialDHF, 
-                "cohort_only", NoOFI, outcome, predictors, standardize=True)
+                testSample+"_only", NoOFI, outcome, predictors, 
+                include_study_dum, include_imp_dums, imp_dums_only, standardize=True)
         Xnew = dfnew[predictors].astype(float).values
         ynew = dfnew[outcome].astype(int).values #make outcome 0/1 and convert to np array
         predDFnew, resultsDFnew = results_for_testset(X, y, Xnew, ynew, 
                                 libs, libnames, sl_folds=5)
         # print predicted probabilities to file (optional)
-        predDFnew.to_csv(outDir+ 'P_' + tableName, sep=",") 
+        predDFnew.to_csv(outDir+ 'P_' + myName + '.txt', sep=",") 
         ## Add columns with additional methods info, print results to text file ##
         resultsDFnew = add_info_and_print(resultsDF, include_imp_dums, screenType,
-                    pred_count, patient_sample, df.shape[0], tableName, 
+                    pred_count, testSample+"Test", df.shape[0], myName + '.txt', 
                     outDir, print_results=True)
-        plot_ROC(ynew, predDFnew, "ROCs_testdata.png", outDir)
+        plot_ROC(ynew, predDFnew, myName, outDir)
 
     ## Get variable importance measures ##
         #takes about 8 min per variable when run on Nandi (~11 hr for 85 vars)
