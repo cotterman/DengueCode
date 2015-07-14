@@ -17,6 +17,8 @@ import pandas as pd
 print "Version of pandas: " , pd.__version__ #should be v0.16.1
 from pandas.core.categorical import Categorical
 
+import matplotlib as mpl
+mpl.use('Agg') #avoids running an X server (to avoid errors with remote runs)
 import matplotlib.pyplot as plt
 #import matplotlib.pyplot as plt; plt.rcdefaults()
 #from matplotlib import style
@@ -55,10 +57,10 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
-outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
-#inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
-#outDir = "/users/ccotter/python_out/" #mitra and nandi
+#inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
+#outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
+inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
+outDir = "/users/ccotter/python_out/" #mitra and nandi
 
 VERBOSE = True
 def log_statement(statement):
@@ -110,8 +112,6 @@ def get_predictor_desc(file_name, outcome, NoOFI):
     if outcome=="is.DEN" or NoOFI==False:
         if predictors.count("PCR")>0 :
             predictors.remove("PCR")
-        if predictors.count("IR")>0 :
-            predictors.remove("IR")
     #drop variables that are not appropriate for prediction type
     #if outcome=="is.DHF_DSS":
         
@@ -131,9 +131,14 @@ def get_predictor_desc(file_name, outcome, NoOFI):
         predictors.append("is.serotype2")
         predictors.append("is.serotype3")
         predictors.remove("PCR")
-    if outcome == "is.DHF_DSS" and predictors.count("IR")>0 :
+
+    #should never include these variables in prediction analysis 
+        #since they are obtained from convelescent samples
+    if predictors.count("IR")>0 :
         predictors.remove("IR") 
-        predictors.append("is.firstInfection")
+    if predictors.count("HematocritoElev")>0:
+        predictors.remove("HematocritoElev")        
+        
     return(predictors)
 
 
@@ -746,7 +751,7 @@ def plot_VIMs(resultsVIM, outDir, figname):
         resultsVIM.sort(columns=['CC_broadcat_sort','RF_OOB'], axis=0, 
             ascending=[False,True], inplace=True)
         # plot VIM results in one graph
-        plt.figure(figsize=(8,10))
+        plt.figure(figsize=(6.9,8))
         positions = np.arange(resultsVIM.shape[0]) + .5
         #symbols and lines for for each VIM
         mymarkers = ['s','o','^','*'] 
@@ -765,7 +770,7 @@ def plot_VIMs(resultsVIM, outDir, figname):
                 color=clist, label=VIM)
             #add verticle lines to indicate no importance
             plt.axvline(x=mynoimportvals[counter], linestyle = mylstyles[counter], 
-                    ymin=0, ymax=resultsVIM.shape[0], color='.6', linewidth=1)
+                    ymin=0, ymax=resultsVIM.shape[0], color='0', linewidth=.5)
         #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
         plt.subplots_adjust(left=.2, right=.9, top=.9, bottom=.1)
         #create legend and labels etc. and save graph
@@ -775,7 +780,7 @@ def plot_VIMs(resultsVIM, outDir, figname):
         plt.xlim(xmin,100)
         plt.ylim(0,resultsVIM.shape[0])
         plt.yticks(positions, np.array(resultsVIM["CC_name"]))
-        plt.tick_params(axis='y', labelsize=8)
+        plt.tick_params(axis='y', labelsize=6)
         #get the coloring of y-axis labels to correspond to variable cost categories
         [l.set_color(clist[i]) for i,l in enumerate(plt.gca().get_yticklabels())]   
         #remove the tick marks; they are unnecessary with the tick lines we just plotted.  
@@ -785,11 +790,11 @@ def plot_VIMs(resultsVIM, outDir, figname):
             #otherwise legend markers will be color of last variable category plotted
         lhandles = []
         for counter, VIM in enumerate(VIMlist):
-            hand = mlines.Line2D([], [], fillstyle='full', color='.6', linewidth=1,
+            hand = mlines.Line2D([], [], fillstyle='full', color='0', linewidth=.5,
                         marker=mymarkers[counter], linestyle = mylstyles[counter],
                         markersize=mymarkersizes[counter])
             lhandles.append(hand)
-        plt.legend((lhandles), (VIM_labels))
+        plt.legend((lhandles), (VIM_labels), prop={'size':8})
         plt.savefig(outDir + figname + '.eps', dpi=1200)
         #plt.show()
         plt.close()
@@ -815,12 +820,14 @@ def main():
     NoInitialDHF = False 
 
     ## Choose patient sample ##
-    #patient_sample = "all"
+    #patient_sample = "all_studyDum" 
+    #patient_sample = "all_impDums" 
+    #patient_sample = "all_noDums" # (according to include_study_dum)
     #patient_sample = "cohort_only"
     patient_sample = "hospital_only"
 
     ## Choose sample to treat as independent test set (if run_testdata=True) ##
-    testSample = "cohort" #options: "cohort" or "hospital
+    testSample = "hospital" #options: "cohort" or "hospital
     
     ## Choose list of variables to use in prediction ##
     predictor_desc = "covarlist_all"
@@ -829,17 +836,17 @@ def main():
     #predictor_desc = "covarlist_genOnly"
     #predictors_prelim = ["is.female", "Temperatura","Tos","Albumina"] #for testing
     predictors_prelim = get_predictor_desc(predictor_desc+".txt", outcome, NoOFI)
-    print "Original predictor list:\n" , predictors_prelim
+    #print "Original predictor list:\n" , predictors_prelim
 
     ## Choose whether to include indicator of clinic type (hospital v cohort) ##
-    include_study_dum = False
+    include_study_dum = True
     if patient_sample=="cohort_only" or patient_sample=="hospital_only":
         include_study_dum = False
 
     ## Choose whether to include imputation dummies ##
         #these imputation dummies will not be standardized 
     include_imp_dums = True #note: I have never seen imputation dummies improve cvAUC
-    imp_dums_only = True #true to run with imputation dummies and no other variable values
+    imp_dums_only = False #true to run with imputation dummies and no other variable values
 
     ## Choose input data (this data was prepared in R) ##
     inputData = "clin12_full_wImputedRF1.txt"
@@ -859,7 +866,7 @@ def main():
     ## Ensure consistency btwn parameter settings; develop titles for output
     if outcome=="is.DEN":
         comparison_groups = "OFI vs. DENV using " #will appear in graph title
-        FileNamePrefix = "OFI.v.DEN" #use all samples; exclude IR and PCR predictors
+        FileNamePrefix = "OFI.v.DEN" #use all samples; exclude PCR predictors
         NoInitialDHF = False #whether to exclude samples with initial DHF/DSS diagnosis
         NoOFI = False
     elif outcome=="is.DHF_DSS":
@@ -875,11 +882,11 @@ def main():
         restrictions = ""
 
     ## choose a different FileNamePrefix for testing to avoid writing over legit results
-    FileNamePrefix = "Exper"
+    #FileNamePrefix = "Exper"
 
     ## Build library of classifiers ##
     libs, libnames = build_library( p=len(predictors), nobs=df.shape[0], 
-                            screen=screenType, testing=True)
+                            screen=screenType, testing=False)
     print "libnames: ", libnames
 
     ## Keep only columns in predictors list, create arrays ##
@@ -908,13 +915,13 @@ def main():
         predDF, resultsDF = results_for_library(X, y, cv_gen, libs, libnames, 
                             predDF, resultsDF)
         # print predicted probabilities to file (optional)
-        #predDF.to_csv(outDir+ 'P_' + tableName, sep=",") 
+        predDF.to_csv(outDir+ 'P_' + tableName, sep=",") 
         ## Add columns with additional methods info, print results to text file ##
         resultsDF = add_info_and_print(resultsDF, include_imp_dums, screenType,
                     pred_count, patient_sample, df.shape[0], tableName, 
                     outDir, print_results=True)
     else:
-        #predDF = pd.read_csv(outDir + 'P_' + tableName, sep=',') 
+        predDF = pd.read_csv(outDir + 'P_' + tableName, sep=',') 
         resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=',') 
 
     ## Make bargraphs of cvAUC results ##

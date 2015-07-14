@@ -14,6 +14,8 @@ import pandas as pd
 print "Version of pandas: " , pd.__version__ #should be v0.16.1
 from pandas.core.categorical import Categorical
 
+import matplotlib as mpl
+mpl.use('Agg') #avoids running an X server (to avoid errors with remote runs)
 import matplotlib.pyplot as plt
 #import matplotlib.pyplot as plt; plt.rcdefaults()
 #import seaborn as sns #for prettier plots
@@ -52,10 +54,10 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
-outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
-#inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
-#outDir = "/users/ccotter/python_out/" #mitra and nandi
+#inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
+#outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
+inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
+outDir = "/users/ccotter/python_out/" #mitra and nandi
 
 def get_colors():
     """
@@ -83,7 +85,7 @@ def get_colors():
 def main():
 
     ## Choose which plots to create ##
-    create_master_barplot = False
+    create_master_barplot = True
     create_testData_barplot = True 
 
     ## Choose outcome variable ##
@@ -119,7 +121,8 @@ def main():
         #combine results across these predictor sets
         predictor_desc_list = ["covarlist_all", "covarlist_noUltraX",
                             "covarlist_CohortRestrict","covarlist_genOnly"]
-        figName = FileNamePrefix + '_combined_' + patient_sample + '.png'
+        pred_label_list = ['Basic+Lab+Costly','Basic+Lab','Clinic Collected','Basic Only']
+        figName = FileNamePrefix + '_combined_' + patient_sample
         tableName = FileNamePrefix + '_' + "covarlist_all" + '_' + patient_sample + '.txt'
         resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
         alg_names = resultsDF['Unnamed: 0'] #algorithm names
@@ -127,12 +130,13 @@ def main():
         initial_pos = np.arange(len(alg_names))*(
             len(predictor_desc_list)+.5)+len(predictor_desc_list)+.5
         bar_width = 1
-        mycolors = sns.color_palette("Set2", 10)
+        mycolors = sns.cubehelix_palette(4, reverse=True) #same hue with diff intensities
+        plt.figure(figsize=(6.7,8))
         #cycle through each predictor list
         plots = []
         for counter, predictor_desc in enumerate(predictor_desc_list):
             tableName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
-            resultsDF = pd.read_csv(preserveDir + 'R_' + tableName, sep=",")
+            resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
             measurements = np.array(resultsDF['cvAUC'])
             z = stats.norm.ppf(.95)
             SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
@@ -141,42 +145,52 @@ def main():
             print "measurements: " , measurements
             print "alg_pos: " , alg_pos
             plot = plt.barh(bottom=alg_pos, width=measurements, height=bar_width,
-                            xerr=SEs, align='center', alpha=1, 
-                            color=mycolors[counter], label=predictor_desc)
+                            xerr=SEs, error_kw=dict(ecolor='.1', lw=1, capsize=1.5, capthick=1),
+                            align='center', alpha=1, 
+                            color=mycolors[counter], label=pred_label_list[counter])
             plots.append(plot)
         plt.xlabel = "cvAUC"
         plt.xlim(.5, 1)
+        plt.ylim(0,max(initial_pos)+1) 
         print "counter: " , counter
         plt.yticks(initial_pos - counter/2, alg_names)
-        plt.legend()
+        plt.legend(title="Clinical Variables")
         plt.tight_layout()
-        plt.savefig(outDir + figName)
-        plt.show()            
+        plt.savefig(outDir + figName + '.eps', dpi=1200)
+        plt.close()           
 
     ## Bar plot with bars grouped by algorithm and colors indicating patient sample ##
     if create_testData_barplot==True:
         # patient samples to loop through
-        patient_list = ['hospital_only','hospitalTest','cohortTest'] 
-                        #,'cohort_only', 'all_studyDum', 'all_noDums'
+        patient_list = ['all_studyDum', 'all_noDums',
+                        'hospital_only','hospitalTest',
+                        'cohort_only', 'cohortTest'] 
+                        #,, 
         # labels to appear in graph legend
-        patient_desc = ['Hospital only (CV results)',
+        patient_desc = ['Hospital + clinic with study indicator (CV results)',
+                        'Hospital + clinic without study indicator (CV results)',
+                        'Hospital only (CV results)',
                         'Predictions for hospital after fitting to clinic',
+                        'Clinic only (CV results)',
                         'Predictions for clinic after fitting to hospital']
-                        #'Clinic only (CV results)'
-                        #'Hospital + clinic with study indicator (CV results)'
-                        #'Hospital + clinic without study indicator (CV results)'
         predictor_desc = "covarlist_CohortRestrict"
-        figName   = FileNamePrefix + '_' + predictor_desc + '_TestSets' + '.png'
+        figName   = FileNamePrefix + '_' + predictor_desc + '_TestSets' 
         tableName = FileNamePrefix + '_' + predictor_desc + '_cohortTest' + '.txt'
         resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
         alg_names = resultsDF['Unnamed: 0'] #algorithm names
         print "alg_names: " , alg_names
-        #could consider linspace instead of np.arange
         initial_pos = np.arange(len(alg_names))*(
-            len(patient_list)+.5)+len(patient_list)+.5
+            len(patient_list)+1)+len(patient_list)+1
         bar_width = 1
-        mycolors = sns.color_palette("Set2", 10)
-        #cycle through each predictor list
+        #hues inspired by list(reversed(sns.color_palette("Paired",12)))
+        mycolors = [(0.42485198495434734, 0.2511495584950722, 0.60386007743723258),
+                    (0.78329874347238004, 0.68724338552531095, 0.8336793640080622),
+                    (0.12572087695201239, 0.47323337360924367, 0.707327968232772),
+                    (0.65098041296005249, 0.80784314870834351, 0.89019608497619629),
+                    (0.89059593116535862, 0.10449827132271793, 0.11108035462744099),
+                    (0.98320646005518297, 0.5980161709820524, 0.59423301088459368)]
+        plt.figure(figsize=(6.7,8))
+        #cycle through each patient list
         plots = []
         for counter, patient_sample in enumerate(patient_list):
             tableName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
@@ -193,17 +207,19 @@ def main():
             print "measurements: " , measurements
             print "alg_pos: " , alg_pos
             plot = plt.barh(bottom=alg_pos, width=measurements, height=bar_width,
-                            xerr=SEs, align='center', alpha=1, 
+                            xerr=SEs, error_kw=dict(ecolor='.1', lw=1, capsize=1, capthick=1),
+                            align='center', alpha=1, 
                             color=mycolors[counter], label=patient_desc[counter])
             plots.append(plot)
         plt.xlabel = "cvAUC"
         plt.xlim(.5, 1)
+        plt.ylim(0,max(initial_pos)+2)
         print "counter: " , counter
         plt.yticks(initial_pos - counter/2, alg_names)
-        plt.legend()
+        plt.legend(prop={'size':6})
         plt.tight_layout()
-        plt.savefig(outDir + figName)
-        plt.show()            
+        plt.savefig(outDir + figName + '.eps', dpi=1200)
+        plt.close()            
 
 if __name__ == '__main__':
     main()
