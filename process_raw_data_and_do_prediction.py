@@ -428,9 +428,9 @@ def fill_row_of_lcms_matrix(respD, rt_grid_size, mz_grid_size, filecount, filena
 def parse_arguments():
     """ When running from command prompt, expect filename and output directory
 
-    Ex: python /srv/scratch/carolyn/Dengue_code/process_raw_data_and_do_prediction.py
-               /srv/scratch/carolyn/mzml_serumR2/3Ni*.mzML
-               /srv/scratch/carolyn/Results/
+    Ex: python /users/ccotter/git_dengue/process_raw_data_and_do_prediction.py
+               /srv/scratch/ccotter/RP_MZML/batch1/*.mzML
+               /srv/scratch/ccotter/py_out
     """ 
     return sys.argv[1:-1], os.path.abspath(sys.argv[-1])
 

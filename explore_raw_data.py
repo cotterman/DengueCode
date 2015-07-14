@@ -17,8 +17,8 @@ import time
 
 ###############################################################################
 
-datadir = "/media/scratch/carolyn/data_mzML/serumR1/" #on Wotan
-outdir = "/home/carolyn/results_dengue/"  #on Wotan
+datadir = "/srv/scratch/ccotter/RP_MZML/batch1/" #on Nandi
+outdir = "/srv/scratch/ccotter/py_out/"  #on Nandi
 
 ###############################################################################
 """
@@ -91,11 +91,7 @@ def plot_mz_vs_intensity(mysample):
 def find_mz_rt_bounds(mysample):
     # find the min and max mz values (across all retention times)
       # and the min and max retention times
-    min_mz = 0.0438833333333
-    max_mz = 1699.52545493
-    min_rt = 0.0438833333333
-    max_rt = 44.99415
-    """
+    
     # obtain an iterator over scan start times
     lcms_run = pymzml.run.Reader(datadir+mysample)
     min_mz = float(1e100)
@@ -110,7 +106,7 @@ def find_mz_rt_bounds(mysample):
         current_rt = get_rt(ms_scan)
         if current_rt != None:
             min_rt = min(min_rt, current_rt)
-        max_rt = max(max_rt, current_rt)"""
+        max_rt = max(max_rt, current_rt)
     print "min mz value: " , min_mz
     print "max mz value: " , max_mz
     print "min rt value: " , min_rt #interesting -- identical to min_mz value
@@ -276,16 +272,19 @@ def main():
 
     start_time = time.time()
     
-    mysample = "Nicaserhilic1000DF5d.mzML" 
-   
+    #mysample = "Nicaserhilic1000DF5d.mzML"  
+    #mysample = "254_1248_P2-D9_R1.mzML" 
+    mysample = "250_1189_P2-B9_R2.mzML"
+    find_mz_rt_bounds(mysample)   
+
     # plot mz vs. intensity for just 1 scan start time
     #plot_mz_vs_intensity(mysample) 
 
     # plot mz vs. rt vs. intensity for various grid resolutions 
-    plot_mz_rt_intensity(
-        mysample, mz_grid_size=20, rt_grid_size=20, name_suffix="20by20")
-    plot_mz_rt_intensity(
-        mysample, mz_grid_size=100, rt_grid_size=100, name_suffix="100by100")  
+    #plot_mz_rt_intensity(
+    #    mysample, mz_grid_size=20, rt_grid_size=20, name_suffix="20by20")
+    #plot_mz_rt_intensity(
+    #    mysample, mz_grid_size=100, rt_grid_size=100, name_suffix="100by100")  
     
     print "Execution time: " , time.time() - start_time, "seconds"
 
@@ -296,7 +295,7 @@ if __name__ == '__main__':
 ###############################################################################
 ################################## Scratch code ###############################
 ###############################################################################
-
+"""
 def scratch():
     for x in t.xmlTree: print x.get('accession'), x.get('name'), x.get('value')
 
@@ -308,5 +307,5 @@ def scratch():
         print mz_array
         print intensity_array
     pass
-
+"""
 
