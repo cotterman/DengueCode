@@ -85,8 +85,9 @@ def get_colors():
 def main():
 
     ## Choose which plots to create ##
-    create_master_barplot = True
-    create_testData_barplot = True 
+    create_master_barplot = False
+    create_impDum_barplot = True
+    create_testData_barplot = False 
 
     ## Choose outcome variable ##
     outcome = "is.DEN"  
@@ -130,7 +131,7 @@ def main():
         initial_pos = np.arange(len(alg_names))*(
             len(predictor_desc_list)+.5)+len(predictor_desc_list)+.5
         bar_width = 1
-        mycolors = sns.cubehelix_palette(4, reverse=True) #same hue with diff intensities
+        mycolors = sns.cubehelix_palette(4, reverse=True) #rot=-.4 option is also pretty
         plt.figure(figsize=(6.7,8))
         #cycle through each predictor list
         plots = []
@@ -157,8 +158,55 @@ def main():
         plt.legend(title="Clinical Variables")
         plt.tight_layout()
         plt.savefig(outDir + figName + '.eps', dpi=1200)
-        plt.close()           
+        plt.close()     
 
+    ## Bar plot with bars grouped by algorithm and colors indicating imputation dummy inclusion ##  
+    if create_impDum_barplot==True:    
+        #runs to loop through
+        suffix_list = ["_impDums", "", "_dumsOnly"]
+        #labels to appear in graph legend
+        list_desc = ["Clinical values + imputation indicators",
+                    "Clinical values only",
+                    "Imputation indicators only"]
+        predictor_desc = "covarlist_all" 
+        figName   = FileNamePrefix + '_' + predictor_desc + patient_sample + '_ImpAnalysis' 
+        tableName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
+        resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
+        alg_names = resultsDF['Unnamed: 0'] #algorithm names
+        print "alg_names: " , alg_names
+        initial_pos = np.arange(len(alg_names))*(
+            len(suffix_list)+1)+len(suffix_list)+1
+        bar_width = 1
+        colors = ["amber","windows blue","greyish"]
+        mycolors = sns.xkcd_palette(colors)
+        plt.figure(figsize=(6.7,8))
+        #cycle through each patient list
+        plots = []
+        for counter, suffix in enumerate(suffix_list):
+            tableName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + suffix + '.txt'
+            resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
+            measurements = np.array(resultsDF['cvAUC'])
+            z = stats.norm.ppf(.95)
+            SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
+                   ( np.array(resultsDF['ci_up']) - np.array(resultsDF['cvAUC']) )/z ]
+            alg_pos = initial_pos - counter 
+            print "measurements: " , measurements
+            print "alg_pos: " , alg_pos
+            plot = plt.barh(bottom=alg_pos, width=measurements, height=bar_width,
+                            xerr=SEs, error_kw=dict(ecolor='.1', lw=1, capsize=1, capthick=1),
+                            align='center', alpha=1, 
+                            color=mycolors[counter], label=list_desc[counter])
+            plots.append(plot)
+        plt.xlabel = "cvAUC"
+        plt.xlim(.5, 1)
+        plt.ylim(0,max(initial_pos)+2)
+        print "counter: " , counter
+        plt.yticks(initial_pos - counter/2, alg_names)
+        plt.legend(prop={'size':8})
+        plt.tight_layout()
+        plt.savefig(outDir + figName + '.eps', dpi=1200)
+        plt.close()     
+        
     ## Bar plot with bars grouped by algorithm and colors indicating patient sample ##
     if create_testData_barplot==True:
         # patient samples to loop through

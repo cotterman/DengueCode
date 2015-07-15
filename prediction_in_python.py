@@ -105,8 +105,13 @@ def get_predictor_desc(file_name, outcome, NoOFI):
         Imports list of variables contained in file_name
         and replaces categorical variable names with binary equivalents
     """
-    f = open(inputsDir + file_name, 'r')
-    predictors = f.read().splitlines()
+    if file_name=="covarlist_custom.txt":
+        f = open(inputsDir + 'covarlist_genOnly.txt', 'r')
+        #add top 4 lab vars
+        predictors = f.read().splitlines() + ['Plaquetas','Leucocitos','TGP_','TGO_'] 
+    else:   
+        f = open(inputsDir + file_name, 'r')
+        predictors = f.read().splitlines()
 
     #drop variables that are not appropriate for prediction type
     if outcome=="is.DEN" or NoOFI==False:
@@ -137,7 +142,9 @@ def get_predictor_desc(file_name, outcome, NoOFI):
     if predictors.count("IR")>0 :
         predictors.remove("IR") 
     if predictors.count("HematocritoElev")>0:
-        predictors.remove("HematocritoElev")        
+        predictors.remove("HematocritoElev") 
+    if predictors.count("Hemoconcentracion")>0:
+        predictors.remove("Hemoconcentracion")        
         
     return(predictors)
 
@@ -314,65 +321,6 @@ def convert_stings_to_categories(df):
             df[col]=df[col].astype("category")
     return df
 
-def get_data(inputsDir, filename, NoInitialDHF, patient_sample, 
-            NoOFI, outcome, predictors_prelim, include_study_dum, 
-            include_imp_dums, imp_dums_only, standardize=True):
-    """
-        Create pandas dataframe from text file created in R
-        Standardize predictor variables (if standardize=True)
-        Eliminate columns according to:
-            predictors_prelim (List of covariates, excluding study and imputation indictors)
-            include_study_dum (True to include is.cohort variable)
-            include_imp_dums (True to include imputation dummy variables)
-        Eliminate observations according to:
-            NoInitialDHF: True means to exclude patients with initial severe dengue Dx
-            patient_sample: "cohort_only","hospital_only" or "both"
-            NoOFI: True means to eliminate non-dengue patients
-    """
-    df_prelim = pd.read_csv(inputsDir + filename, sep='\t', 
-        true_values=["True","Yes","TRUE"], false_values=["False","No","FALSE"], 
-        na_values=['NaN','NA']) 
-    #ML funcs give predicted probs only for int outcomes
-        #currently turning to int as part of read_csv
-    #df["is.DEN"] = df["is.DEN"].astype(int) 
-    df_prelim[["is.female"]] = (df_prelim[["Sexo"]]=="female").astype(int)
-    df_prelim[["is.cohort"]] = (df_prelim[["Study"]]=="Cohort").astype(int) 
-
-    if (include_study_dum==True):
-        predictors_prelim.append("is.cohort")
-
-    #modify predictor list so as to include imputation dummies if desired
-    predictors = add_imput_dummies(include_imp_dums, imp_dums_only, df_prelim, predictors_prelim)
-
-    #keep only the columns that we want to use in analysis
-    X_prelim = df_prelim[predictors]
-
-    #standardize data before removing rows 
-        #want standardization to be same for cohort and hospit data 
-        #scale data since ridge/elastic net are not equivariant under scaling
-    if (standardize==True):
-        X = X_prelim.apply(lambda x: (x - x.mean()) / x.std() )
-    else:
-        X = X_prelim
-    #put back the variables that were not to be scaled
-    nonXdf = df_prelim[['code','Study','DENV','WHO_initial_given',outcome]]
-    df = pd.concat([nonXdf, X], axis=1)
-    
-    #remove rows according to parameter values
-    if (NoInitialDHF==True):
-        df = df[df.WHO_initial_given!="DSS"] 
-        df = df[df.WHO_initial_given!="DHF"] 
-    if (NoOFI==True):
-        df = df[df.DENV=="Positivo"] #limit to only DENV positive patients
-    if (patient_sample == "hospital_only"):
-        df = df[df.Study=="Hospital"] #limit to only hospital patients
-    if (patient_sample == "cohort_only"):
-        df = df[df.Study=="Cohort"] #limit to only cohort patients
-    print "Number of rows in dataframe: " , df.shape[0], "\n"
-    #print "Column names in dataframe: " , list(df.columns.values), "\n" 
-
-    return df, predictors
-
 def add_imput_dummies(include_imp_dums, imp_dums_only, df, predictors_prelim):
     """
         Find imputation dummies in data that correspond to predictor_prelim list
@@ -407,6 +355,71 @@ def add_imput_dummies(include_imp_dums, imp_dums_only, df, predictors_prelim):
         predictors = predictors_prelim
 
     return predictors
+
+def get_data(inputsDir, filename, NoInitialDHF, patient_sample, 
+            NoOFI, outcome, predictors_prelim, include_study_dum, 
+            include_imp_dums, imp_dums_only, standardize=True):
+    """
+        Create pandas dataframe from text file created in R
+        Standardize predictor variables (if standardize=True)
+        Eliminate columns according to:
+            predictors_prelim (List of covariates, excluding study and imputation indictors)
+            include_study_dum (True to include is.cohort variable)
+            include_imp_dums (True to include imputation dummy variables)
+        Eliminate observations according to:
+            NoInitialDHF: True means to exclude patients with initial severe dengue Dx
+            patient_sample: "cohort_only","hospital_only" or "both"
+            NoOFI: True means to eliminate non-dengue patients
+    """
+    df_prelim = pd.read_csv(inputsDir + filename, sep='\t', 
+        true_values=["True","Yes","TRUE"], false_values=["False","No","FALSE"], 
+        na_values=['NaN','NA']) 
+    #ML funcs give predicted probs only for int outcomes
+        #currently turning to int as part of read_csv
+    #df["is.DEN"] = df["is.DEN"].astype(int) 
+    df_prelim[["is.female"]] = (df_prelim[["Sexo"]]=="female").astype(int)
+    df_prelim[["is.cohort"]] = (df_prelim[["Study"]]=="Cohort").astype(int) 
+
+    #standardize data before removing rows 
+        #want standardization to be same for cohort and hospit data 
+        #scale data since ridge/elastic net are not equivariant under scaling
+    X_prelim = df_prelim[predictors_prelim]
+    if (standardize==True):
+        X = X_prelim.apply(lambda x: (x - x.mean()) / x.std() )
+    else:
+        X = X_prelim
+
+    #modify predictor list so as to include cohort and imputation dummies if desired
+        #note we are adding them after standardizing to prevent them from being standardized
+    if include_study_dum==True:
+        predictors = predictors_prelim + ["is.cohort"]
+    else:
+        predictors = predictors_prelim
+    all_predictors = add_imput_dummies(include_imp_dums, imp_dums_only, df_prelim, predictors)
+    #get list of variables that were not scaled (could be an empty list)
+    addons =  [v for v in all_predictors if v not in predictors_prelim]  
+
+    #put back the variables that were not scaled
+    nonXdf = df_prelim[['code','Study','DENV','WHO_initial_given',outcome] + addons]
+    if imp_dums_only == True: #only use imputation indicators
+        df = nonXdf 
+    else: #include clinical info plus possible addons
+        df = pd.concat([nonXdf, X], axis=1)
+    
+    #remove rows according to parameter values
+    if (NoInitialDHF==True):
+        df = df[df.WHO_initial_given!="DSS"] 
+        df = df[df.WHO_initial_given!="DHF"] 
+    if (NoOFI==True):
+        df = df[df.DENV=="Positivo"] #limit to only DENV positive patients
+    if (patient_sample == "hospital_only"):
+        df = df[df.Study=="Hospital"] #limit to only hospital patients
+    if (patient_sample == "cohort_only"):
+        df = df[df.Study=="Cohort"] #limit to only cohort patients
+    print "Number of rows in dataframe: " , df.shape[0], "\n"
+    #print "Column names in dataframe: " , list(df.columns.values), "\n" 
+
+    return df, all_predictors
 
 def build_library(p, nobs, screen=None, testing=False, univariate=False):
     """
@@ -643,7 +656,7 @@ def plot_ROC(y, predDF, figName, outDir):
     
 
 def add_info_and_print(resultsDF, include_imp_dums, screenType, pred_count, 
-                        patient_sample, nobs, tableName, outDir, print_results):
+                        patient_sample, nobs, outName, outDir, print_results):
     resultsDF.insert(loc=len(resultsDF.columns), column='include_imp_dums',
                      value=include_imp_dums)
     resultsDF.insert(loc=len(resultsDF.columns), column='screen_method',
@@ -658,13 +671,13 @@ def add_info_and_print(resultsDF, include_imp_dums, screenType, pred_count,
     print "\nCombined results: \n" , resultsDF
     #output results to csv
     if print_results==True:
-        resultsDF.to_csv(outDir + 'R_' + tableName, sep=",")    
+        resultsDF.to_csv(outDir + 'R_' + outName + '.txt', sep=",")    
     #alternative: could use the predicted values coming from running SL
     #print sl.y_pred_cv.shape # numpy array of dimension n (#obs) by k (#algorithms)
     #print "\nPerformance results, RF: " , get_performance_vals(y, sl.y_pred_cv[:,0])
     return resultsDF
 
-def get_VIM1(predictors, df, y, FileNamePrefix, predictor_desc, patient_sample,
+def get_VIM1(predictors, df, y, outName, FileNamePrefix, predictor_desc, patient_sample,
                     libs, libnames, run_VIM1):
     """
         ## Run super learner in absence of each variable separately ##
@@ -672,7 +685,7 @@ def get_VIM1(predictors, df, y, FileNamePrefix, predictor_desc, patient_sample,
         # and with all variables  -- report differences in cvAUC with full model
         #note: predictor list will include imputation dummies if that option is selected
     """
-    tableName = 'VIM1_' + FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
+    myName = 'VIM1_' + outName
     if run_VIM1==True:
         resultsDFvim1 = pd.DataFrame() #empty df to hold performance measures
         for counter, var in enumerate(predictors):
@@ -693,21 +706,22 @@ def get_VIM1(predictors, df, y, FileNamePrefix, predictor_desc, patient_sample,
         resultsDFvim1['varname'] = resultsDFvim1.index.values
         # Add columns with additional methods info, print results to text file #
         resultsDFvim1 = add_info_and_print(resultsDFvim1, include_imp_dums, screenType,
-                pred_count, patient_sample, df.shape[0], tableName, 
+                pred_count, patient_sample, df.shape[0], myName, 
                 outDir, print_results=True)
     else:
         # Read in text file if you do not wish to re-create VIM results
-        resultsDFvim1 = pd.read_csv(outDir + 'R_' + tableName, sep=',')
+        resultsDFvim1 = pd.read_csv(outDir + 'R_' + myName, sep=',')
     # Calculate VIM measure and keep only relevant variables
     # We want var importance to be 100*(cvAUC_SL_noDrops - cvAUC)
     resultsDFvim1['cvAUC'] *= 100
     cvAUC_SL_noDrops = resultsDFvim1.loc[resultsDFvim1['varname']=='Super Learner']['cvAUC'].values
-    resultsDFvim1['SL_VariableDrop'] = resultsDFvim1['cvAUC'] - cvAUC_SL_noDrops
+    resultsDFvim1['SL_VariableDrop'] = cvAUC_SL_noDrops - resultsDFvim1['cvAUC'] 
     resultsDFvim1 = resultsDFvim1[['varname','SL_VariableDrop']]   
     return resultsDFvim1
 
 
-def get_VIM2(predictors, df, y, FileNamePrefix, predictor_desc, patient_sample, run_VIM2):
+def get_VIM2(predictors, df, y, outName, FileNamePrefix, predictor_desc, 
+                patient_sample, run_VIM2):
     """
         ## Run super learner with each variable separately -- report cvAUC 
         #use SL library that only includes algorithms that work with 1 predictor
@@ -715,7 +729,7 @@ def get_VIM2(predictors, df, y, FileNamePrefix, predictor_desc, patient_sample, 
     libsUni, libnamesUni = build_library( p=len(predictors), nobs=df.shape[0], 
                         screen=None, testing=False, univariate=True)
     print "univariate libnames: ", libnamesUni
-    tableName = 'VIM2_' + FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
+    myName = 'VIM2_' + outName
     if run_VIM2==True:
         resultsDFvim2 = pd.DataFrame() #empty df to hold performance measures
         for counter, var in enumerate(predictors):
@@ -732,11 +746,11 @@ def get_VIM2(predictors, df, y, FileNamePrefix, predictor_desc, patient_sample, 
         resultsDFvim2['varname'] = resultsDFvim2.index.values
         # Add columns with additional methods info, print results to text file #
         resultsDFvim2 = add_info_and_print(resultsDFvim2, include_imp_dums, screenType,
-                pred_count, patient_sample, df.shape[0], tableName, 
+                pred_count, patient_sample, df.shape[0], myName, 
                 outDir, print_results=True)
     else:
         # Read in text file if you do not wish to re-create VIM results
-        resultsDFvim2 = pd.read_csv(outDir + 'R_' + tableName, sep=',')
+        resultsDFvim2 = pd.read_csv(outDir + 'R_' + myName, sep=',')
     # Calculate VIM measure and keep only relevant variables
     resultsDFvim2['SL_Univariate'] = resultsDFvim2['cvAUC']*100
     resultsDFvim2 = resultsDFvim2[['varname','SL_Univariate']]
@@ -802,27 +816,29 @@ def plot_VIMs(resultsVIM, outDir, figname):
 def main():
     start_time_overall = time.time()
 
+    ###########################################################################
+    ###################### Choices, choices, choices ##########################
+
     ## Choose which parts of code to run ##
     run_MainAnalysis = True  # if false, will expect to get results from file
+    plot_MainAnalysis = True # if true, will create figures for main analysis
     run_testdata = False #true means to get predictions for independent test set
-    run_VIM = False  # if false, none of the VIM code will be run
-    run_VIM1 = False # if false, will expect to obtain VIM1 results from file
-    run_VIM2 = False  # if false, will expect to obtain VIM2 results from file
+    run_VIM = True  # if false, none of the VIM code will be run
+    run_VIM1 = True # if false, will expect to obtain VIM1 results from file
+    run_VIM2 = True  # if false, will expect to obtain VIM2 results from file
 
     ## Choose outcome variable ##
-    outcome = "is.DEN"  
-    #outcome = "is.DHF_DSS"
+    #outcome = "is.DEN"  
+    outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients ##
     NoOFI = False 
 
     ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
-    NoInitialDHF = False 
+    NoInitialDHF = True #applicable only for is.DHF_DSS analyses
 
     ## Choose patient sample ##
-    #patient_sample = "all_studyDum" 
-    #patient_sample = "all_impDums" 
-    #patient_sample = "all_noDums" # (according to include_study_dum)
+    #patient_sample = "all" 
     #patient_sample = "cohort_only"
     patient_sample = "hospital_only"
 
@@ -834,36 +850,33 @@ def main():
     #predictor_desc = "covarlist_noUltraX"
     #predictor_desc = "covarlist_CohortRestrict"
     #predictor_desc = "covarlist_genOnly"
-    #predictors_prelim = ["is.female", "Temperatura","Tos","Albumina"] #for testing
-    predictors_prelim = get_predictor_desc(predictor_desc+".txt", outcome, NoOFI)
-    #print "Original predictor list:\n" , predictors_prelim
+    #predictor_desc = "covarlist_custom"  #one-off analysis
 
-    ## Choose whether to include indicator of clinic type (hospital v cohort) ##
-    include_study_dum = True
-    if patient_sample=="cohort_only" or patient_sample=="hospital_only":
-        include_study_dum = False
-
-    ## Choose whether to include imputation dummies ##
-        #these imputation dummies will not be standardized 
-    include_imp_dums = True #note: I have never seen imputation dummies improve cvAUC
+    ## Choose whether to include  ##
+    include_study_dum = False #true to include is.cohort indicator 
+    include_imp_dums = False #true to add imputation dummies to covariate list
     imp_dums_only = False #true to run with imputation dummies and no other variable values
 
     ## Choose input data (this data was prepared in R) ##
     inputData = "clin12_full_wImputedRF1.txt"
         # "clin12_full_wImputedRF1.txt" - data with imputations using cohort+hospit data
         # "clin12_hospit_wImputedRF1.txt" - data with imputations using hospit data only
-    ## Create pandas dataframe with data that was cleaned in R ##
-    df, predictors = get_data(inputsDir, inputData, 
-                    NoInitialDHF, patient_sample, NoOFI, outcome, predictors_prelim,
-                    include_study_dum, include_imp_dums, imp_dums_only, standardize=True)
-    print "Predictors to include, pre-screening:\n" , predictors
  
     ## Choose variable screening method (if any) ##
     screenType = None #current options: None, "univariate", "L1"
     screenNum = 5 #applies when screenType != None; else will be ignored
-    screen, pred_count = get_screen(screenType, screenNum, predictors)
 
-    ## Ensure consistency btwn parameter settings; develop titles for output
+    ## Choose whether to standardize predictors (will not apply to imputation dummies)
+    std_vars = True 
+
+    ## choose a different FileNamePrefix for testing to avoid writing over legit results
+    #FileNamePrefix = "Exper"
+
+    ############# you are now done with choosing your parameters ##############
+    ###########################################################################
+
+
+    ## Ensure consistency btwn parameter settings and develop titles for output
     if outcome=="is.DEN":
         comparison_groups = "OFI vs. DENV using " #will appear in graph title
         FileNamePrefix = "OFI.v.DEN" #use all samples; exclude PCR predictors
@@ -880,11 +893,31 @@ def main():
         restrictions = ", DENV patients with non-severe initial Dx"
     else:
         restrictions = ""
+    if patient_sample=="cohort_only" or patient_sample=="hospital_only":
+        include_study_dum = False
 
-    ## choose a different FileNamePrefix for testing to avoid writing over legit results
-    #FileNamePrefix = "Exper"
+    ## Suffix to indicate use of imputation dummies
+    if imp_dums_only==True:
+        FileNameSuffix = "_dumsOnly"
+    elif include_imp_dums==True:
+        FileNameSuffix = "_impDums"
+    elif include_study_dum==True: # include is.cohort indicator
+        FileNameSuffix = "_studyDum"
+    else: # all covariates, but no missing indicators
+        FileNameSuffix = "" #could use "_noDums" but instead I will use no suffix
+
+    ## Preliminary list of predictors ##
+    predictors_prelim = get_predictor_desc(predictor_desc+".txt", outcome, NoOFI)
+    #print "Original predictor list:\n" , predictors_prelim
+
+    ## Create pandas dataframe with data that was cleaned in R ##
+    df, predictors = get_data(inputsDir, inputData, 
+                    NoInitialDHF, patient_sample, NoOFI, outcome, predictors_prelim,
+                    include_study_dum, include_imp_dums, imp_dums_only, standardize=std_vars)
+    print "Predictors to include, pre-screening:\n" , predictors
 
     ## Build library of classifiers ##
+    screen, pred_count = get_screen(screenType, screenNum, predictors)
     libs, libnames = build_library( p=len(predictors), nobs=df.shape[0], 
                             screen=screenType, testing=False)
     print "libnames: ", libnames
@@ -895,9 +928,10 @@ def main():
     #print "Actual outcomes: " , y[:10]
     #X, y=datasets.make_classification(n_samples=88, n_features=95) #toy data
 
-    ## Get CV predictions and performance measures##
-    #name of text file containing performance measures (to either create or import)
-    tableName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
+    ## Name of text file containing performance measures (to either create or import)
+    outName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + FileNameSuffix
+
+    ## Get CV predictions and performance measures ##
     if run_MainAnalysis == True:
         cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
         predDF = pd.DataFrame() #this will hold predicted probs for all algorithms
@@ -915,29 +949,30 @@ def main():
         predDF, resultsDF = results_for_library(X, y, cv_gen, libs, libnames, 
                             predDF, resultsDF)
         # print predicted probabilities to file (optional)
-        predDF.to_csv(outDir+ 'P_' + tableName, sep=",") 
+        predDF.to_csv(outDir+ 'P_' + outName + '.txt', sep=",") 
         ## Add columns with additional methods info, print results to text file ##
         resultsDF = add_info_and_print(resultsDF, include_imp_dums, screenType,
-                    pred_count, patient_sample, df.shape[0], tableName, 
+                    pred_count, patient_sample, df.shape[0], outName, 
                     outDir, print_results=True)
     else:
-        predDF = pd.read_csv(outDir + 'P_' + tableName, sep=',') 
-        resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=',') 
+        print "reading from results files"
+        #predDF = pd.read_csv(outDir + 'P_' + outName + '.txt', sep=',') 
+        #resultsDF = pd.read_csv(outDir + 'R_' + outName + '.txt', sep=',') 
 
-    ## Make bargraphs of cvAUC results ##
-    plot_title = comparison_groups+predictor_desc+restrictions
-    figName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample
-    plot_cvAUC(resultsDF, plot_title="", figName=figName, 
-                outDir=outDir, run_MainAnalysis=run_MainAnalysis)
-    ## ROC curve plots ##
-    plot_ROC(y, predDF, figName, outDir)
+    if plot_MainAnalysis == True:
+        ## Make bargraphs of cvAUC results ##
+        plot_title = comparison_groups+predictor_desc+restrictions
+        plot_cvAUC(resultsDF, plot_title="", figName=outName, 
+                    outDir=outDir, run_MainAnalysis=run_MainAnalysis)
+        ## ROC curve plots ##
+        plot_ROC(y, predDF, outName, outDir)
 
     ## Get predictions and performance measures for test (cohort) data ##
     if run_testdata == True:
-        myName = FileNamePrefix+'_'+predictor_desc+'_'+testSample+'Test'
+        myoName = FileNamePrefix+'_'+predictor_desc+'_'+testSample+'Test'
         dfnew = get_data(inputsDir, inputData, NoInitialDHF, 
                 testSample+"_only", NoOFI, outcome, predictors, 
-                include_study_dum, include_imp_dums, imp_dums_only, standardize=True)
+                include_study_dum, include_imp_dums, imp_dums_only, standardize=std_vars)
         Xnew = dfnew[predictors].astype(float).values
         ynew = dfnew[outcome].astype(int).values #make outcome 0/1 and convert to np array
         predDFnew, resultsDFnew = results_for_testset(X, y, Xnew, ynew, 
@@ -946,20 +981,20 @@ def main():
         predDFnew.to_csv(outDir+ 'P_' + myName + '.txt', sep=",") 
         ## Add columns with additional methods info, print results to text file ##
         resultsDFnew = add_info_and_print(resultsDF, include_imp_dums, screenType,
-                    pred_count, testSample+"Test", df.shape[0], myName + '.txt', 
+                    pred_count, testSample+"Test", df.shape[0], myoName, 
                     outDir, print_results=True)
-        plot_ROC(ynew, predDFnew, myName, outDir)
+        plot_ROC(ynew, predDFnew, myoName, outDir)
 
     ## Get variable importance measures ##
         #takes about 8 min per variable when run on Nandi (~11 hr for 85 vars)
     if run_VIM==True:
 
         #get results from the "variable drop" importance method      
-        resultsDFvim1 = get_VIM1(predictors, df, y, FileNamePrefix, predictor_desc,
-                         patient_sample,libs, libnames, run_VIM1)
+        resultsDFvim1 = get_VIM1(predictors, df, y, outName, FileNamePrefix, 
+                                predictor_desc, patient_sample,libs, libnames, run_VIM1)
         #get results from the "univariate" importance method
-        resultsDFvim2 = get_VIM2(predictors, df, y, 
-                        FileNamePrefix, predictor_desc, patient_sample,run_VIM2)
+        resultsDFvim2 = get_VIM2(predictors, df, y, outName,
+                        FileNamePrefix, predictor_desc, patient_sample, run_VIM2)
 
         ## Read in VIMs from random forests run in R ##
         VIM_rf = pd.read_csv(inputsDir + 'VIM_rf_noimputs.txt', sep='\t') 
@@ -972,7 +1007,8 @@ def main():
                             on="varname", how="inner", sort=False)
 
         ## Plot VIM results in one graph ##
-        plot_VIMs(resultsVIM, outDir,'VIMs_noimputes')
+        plot_VIMs(resultsVIM, outDir,
+            'VIMs_' + FileNamePrefix + '_' + predictor_desc + '_noimputes')
     
     ## Ouput execution time info ##
     log_statement("Total execution time: {} minutes".format(

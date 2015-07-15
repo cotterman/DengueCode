@@ -134,9 +134,9 @@ contents(df[,varlist])
 
 #compare the serotypes for hospital v cohort patients
 th = table(dh[which(dh$is.DEN==1), "PCR"])
-tc = table(dh[which(dc$is.DEN==1), "PCR"])
+tc = table(dc[which(dc$is.DEN==1), "PCR"])
 compare = as.table(rbind(th[2:4], tc[2:4]))
-chisq.test(compare) #not significantly different
+chisq.test(compare) #significantly different -- more type 3s in hospital
 
 ## subset the data with variable info to include only rows that we care about
 varinfo = clinic_varsD[which(clinic_varsD$variable.name.in.final.data %in% varlist==T),]

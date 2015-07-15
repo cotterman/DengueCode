@@ -63,7 +63,8 @@ par(par.defaults)
 
 #directory containing code
 #codeDir = "/srv/scratch/ccotter/Dengue_code/" #on Amold from Amold's perspective
-codeDir = "/home/ccotter/temp_Dengue_code/github_dengue/" #on myPC
+#codeDir = "/home/ccotter/temp_Dengue_code/github_dengue/" #on myPC
+codeDir = "/home/ccotter/Desktop/nandi_home/git_dengue/" #remote repo mounted on my PC
 
 #select main directory in which to find subfolders containing data and results
 #homeDir = "/srv/scratch/ccotter/" #on Amold from Amold's perspective
