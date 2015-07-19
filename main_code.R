@@ -29,7 +29,7 @@ sourceDir <- function(path, trace = TRUE, ...) {
   }
 }
 #sourceDir("/srv/scratch/carolyn/SuperLearner/R")  #load the SuperLearner files that I have saved locally (on Amold)
-sourceDir("~/temp_Dengue_code/git_dengue/git_SuperLearner/R")  #load the SuperLearner files that I have saved locally (on my PC)
+#sourceDir("~/temp_Dengue_code/git_dengue/git_SuperLearner/R")  #load the SuperLearner files that I have saved locally (on my PC)
 #library(leaps) #for best subset selections
 library(bestglm) #for best subset selection
 library(glmnet) 
@@ -63,8 +63,8 @@ par(par.defaults)
 
 #directory containing code
 #codeDir = "/srv/scratch/ccotter/Dengue_code/" #on Amold from Amold's perspective
-#codeDir = "/home/ccotter/temp_Dengue_code/github_dengue/" #on myPC
-codeDir = "/home/ccotter/Desktop/nandi_home/git_dengue/" #remote repo mounted on my PC
+codeDir = "/home/ccotter/temp_Dengue_code/github_dengue/" #on myPC
+#codeDir = "/home/ccotter/Desktop/nandi_home/git_dengue/" #remote repo mounted on my PC
 
 #select main directory in which to find subfolders containing data and results
 #homeDir = "/srv/scratch/ccotter/" #on Amold from Amold's perspective
@@ -168,7 +168,7 @@ covarlist_noMiss = get_clinic_var_list(clinic_varsD, outcome="either", eliminate
                                        XD=clinical_full_clean, restrict_to_cohort_vars=F, restrict_to_hospit_vars=F, UltraX=T, BloodLab=T)
 write(covarlist_noMiss, paste(outputsDir,"covarlist_noMiss.txt", sep=""),sep = ",")
 #These are the 41 clinical vars included in original (R33) analysis -- the ones that are never missing among our 88 samples 
-covarDEN_88noMiss = get_clinic_var_list(clinic_varsD, outcome="ND.vs.DEN", eliminate_vars_with_missings=T, 
+covarDEN_88noMiss = get_clinic_var_list(clinic_varsD, outcome="OFI.v.DEN", eliminate_vars_with_missings=T, 
                                         eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
                                         XD=clinical_D1_clean, restrict_to_cohort_vars=T, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
 write(covarDEN_88noMiss, paste(outputsDir,"covarDEN_88noMiss.txt", sep=""),sep = ",")
@@ -180,7 +180,7 @@ write(covarDEN_88noMiss, paste(outputsDir,"covarDEN_88noMiss.txt", sep=""),sep =
 #and then fail on the full dataset for that condition to be met and 
 #then the coefficients are re-estimated on the subset of the algorithms that didn't fail at either stage. "
 #debug( run_predictions )
-testme = run_predictions(clinic_varsD, covarlist_noUltraX, "ND.vs.DEN", comboD1_filter50n_wImpRF1, paste("D1, noUltraX clinical"), include_imp_dums="all")
+testme = run_predictions(clinic_varsD, covarlist_noUltraX, "OFI.v.DEN", comboD1_filter50n_wImpRF1, paste("D1, noUltraX clinical"), include_imp_dums="all")
 
 #options(error=browser()) #view problem
 
@@ -189,11 +189,11 @@ run_runs <- function(pdata, pdata_desc, imp){
   #all other parameters are from namespace
   
   ##### ND vs DEN #####
-  DEN_allClin = run_predictions(clinic_varsD, covarlist_all, "ND.vs.DEN", pdata, paste(pdata_desc,", all clinical"), include_imp_dums=imp)
-  DEN_cohortRclin = run_predictions(clinic_varsD, covarlist_CohortRestrict, "ND.vs.DEN", pdata, paste(pdata_desc,", CohortRestrict clinical"), include_imp_dums=imp)
-  DEN_noUXclin = run_predictions(clinic_varsD, covarlist_noUltraX, "ND.vs.DEN", pdata, paste(pdata_desc,", noUltraX clinical"), include_imp_dums=imp)
-  DEN_genOnlyclin= run_predictions(clinic_varsD, covarlist_genOnly, "ND.vs.DEN", pdata, paste(pdata_desc,", genOnly clinical"), include_imp_dums=imp)
-  DEN_noMiss88clin= run_predictions(clinic_varsD, covarDEN_88noMiss, "ND.vs.DEN", pdata, paste(pdata_desc,", noMiss88 clinical"), include_imp_dums=imp)
+  DEN_allClin = run_predictions(clinic_varsD, covarlist_all, "OFI.v.DEN", pdata, paste(pdata_desc,", all clinical"), include_imp_dums=imp)
+  DEN_cohortRclin = run_predictions(clinic_varsD, covarlist_CohortRestrict, "OFI.v.DEN", pdata, paste(pdata_desc,", CohortRestrict clinical"), include_imp_dums=imp)
+  DEN_noUXclin = run_predictions(clinic_varsD, covarlist_noUltraX, "OFI.v.DEN", pdata, paste(pdata_desc,", noUltraX clinical"), include_imp_dums=imp)
+  DEN_genOnlyclin= run_predictions(clinic_varsD, covarlist_genOnly, "OFI.v.DEN", pdata, paste(pdata_desc,", genOnly clinical"), include_imp_dums=imp)
+  DEN_noMiss88clin= run_predictions(clinic_varsD, covarDEN_88noMiss, "OFI.v.DEN", pdata, paste(pdata_desc,", noMiss88 clinical"), include_imp_dums=imp)
   ##### DF vs DHF/DSS #####
   DHF_allClin = run_predictions(clinic_varsD, covarlist_all, "DF.vs.DHF.DSS", pdata, paste(pdata_desc,", all clinical"), include_imp_dums=imp)
   DHF_noUXclin = run_predictions(clinic_varsD, covarlist_noUltraX, "DF.vs.DHF.DSS", pdata, paste(pdata_desc,", noUltraX clinical"), include_imp_dums=imp)
@@ -211,7 +211,7 @@ run_runs <- function(pdata, pdata_desc, imp){
 
 #try to recreate trimlogit error
 #clin_D1_wImputedRF1 = clin_full_wImputedRF1[which(clin_full_wImputedRF1$serum=="1"),]
-#DEN_genOnlyclin= run_predictions(clinic_varsD, covarlist_genOnly, "ND.vs.DEN", clin_D1_wImputedRF1, "D1, genOnly clinical", include_imp_dums="all")
+#DEN_genOnlyclin= run_predictions(clinic_varsD, covarlist_genOnly, "OFI.v.DEN", clin_D1_wImputedRF1, "D1, genOnly clinical", include_imp_dums="all")
 
 Run_D1_clinOnly=F
 if(Run_D1_clinOnly==T){
@@ -233,37 +233,37 @@ if(T==F){
   
   ## Results using just sample of 88.
   # mass hunter
-  resultsD1_DEN = run_predictions(clinic_varsD, covarlist_all, "ND.vs.DEN", comboD1_filter50n_wImpRF1, "CohortRestrict, D1", include_imp_dums="none")
+  resultsD1_DEN = run_predictions(clinic_varsD, covarlist_all, "OFI.v.DEN", comboD1_filter50n_wImpRF1, "CohortRestrict, D1", include_imp_dums="none")
   #write.csv(x=resultsD1_DEN[[1]], file=paste(resultsDir,"D1_wImput_LCMS_selectionMethods_MH.txt",sep=""), row.names = FALSE)
   # binned
-  resultsD1_DEN_bins = run_predictions(clinic_varsD, covarlist_CohortRestrict, "ND.vs.DEN", comboD1_bins50x50_wImpRF1, "CohortRestrict, D1", include_imp_dums="none")
+  resultsD1_DEN_bins = run_predictions(clinic_varsD, covarlist_CohortRestrict, "OFI.v.DEN", comboD1_bins50x50_wImpRF1, "CohortRestrict, D1", include_imp_dums="none")
   write.csv(x=resultsD1_DEN_bins[[1]], file=paste(resultsDir,"D1_wImput_LCMS_bins88b_selection.txt",sep=""), row.names = FALSE)
   #serum batch 2 (n=75)
   clin_D2_wImputedRF = clin_full_wImputedRF1[which(clin_full_wImputedRF1$serum==2),]
-  resultsD1_DEN = run_predictions(clinic_varsD, covarlist_all, "ND.vs.DEN", clin_D2_wImputedRF, "CohortRestrict, D2", include_imp_dums="none")
+  resultsD1_DEN = run_predictions(clinic_varsD, covarlist_all, "OFI.v.DEN", clin_D2_wImputedRF, "CohortRestrict, D2", include_imp_dums="none")
   
   ### Non-invasive samples from Nicaragua -- ND vs DEN only ###
   
-  resultsD3_DEN = run_predictions(clinic_varsD, covarlist_CohortRestrict, "ND.vs.DEN", comboD3_filter50n_wImpRF1, "CohortRestrict, saliva, D3", include_imp_dums="none")
+  resultsD3_DEN = run_predictions(clinic_varsD, covarlist_CohortRestrict, "OFI.v.DEN", comboD3_filter50n_wImpRF1, "CohortRestrict, saliva, D3", include_imp_dums="none")
   resultsD3_DEN[[1]]
   write.csv(x=resultsD3_DEN[[1]], file=paste(resultsDir,"resultsD3_DEN_CohortRestrict.txt"), row.names = FALSE)
   
-  resultsD5_DEN = run_predictions(clinic_varsD, covarlist_CohortRestrict, "ND.vs.DEN", comboD5_filter50n_wImpRF1, "CohortRestrict, urine, D5", include_imp_dums="none")
+  resultsD5_DEN = run_predictions(clinic_varsD, covarlist_CohortRestrict, "OFI.v.DEN", comboD5_filter50n_wImpRF1, "CohortRestrict, urine, D5", include_imp_dums="none")
   resultsD5_DEN[[1]]
   write.csv(x=resultsD5_DEN[[1]], file=paste(resultsDir,"resultsD5_DEN_CohortRestrict.txt"), row.names = FALSE)
   
   
   ### Serum Samples from Nicaragua ###
   
-  resultsD1_DEN = run_predictions(clinic_varsD, covarlist, "ND.vs.DEN", comboD1_bins50x50, "serum, D1")
+  resultsD1_DEN = run_predictions(clinic_varsD, covarlist, "OFI.v.DEN", comboD1_bins50x50, "serum, D1")
   resultsD1_DEN[[1]] #view results
   write.csv(x=resultsD1_DEN[[1]], file=paste(resultsDir, "resultsD1_DEN_bins_v7.txt",sep=""), row.names = FALSE)
   
-  resultsD1_DEN = run_predictions(clinic_varsD, covarDEN_88noMiss, "ND.vs.DEN", comboD1_filter50n_wImpRF1, "noMiss88, serum, D1", include_imp_dums="none")
+  resultsD1_DEN = run_predictions(clinic_varsD, covarDEN_88noMiss, "OFI.v.DEN", comboD1_filter50n_wImpRF1, "noMiss88, serum, D1", include_imp_dums="none")
   resultsD1_DEN[[1]] #view results
   write.csv(x=resultsD1_DEN[[1]], file=paste(resultsDir,"resultsD1_DEN_CO_v9_last.txt",sep=""), row.names = FALSE)
   
-  resultsD2_DEN = run_predictions(clinic_varsD, "ND.vs.DEN", comboD2_filter50n, "serum, D2")
+  resultsD2_DEN = run_predictions(clinic_varsD, "OFI.v.DEN", comboD2_filter50n, "serum, D2")
   resultsD2_DEN[[1]] #view results
   write.csv(x=resultsD2_DEN[[1]], file=paste(resultsDir,"resultsD2_DEN_v7.txt",sep=""), row.names = FALSE)
   
@@ -289,20 +289,20 @@ if(T==F){
   #################### Variable Importance Analysis without CV ##################
   ###############################################################################
   
-  D1_VIM_covarF = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD1_filter50n, dim_reduce_covar=F, "D1_covarF")
-  D1_VIM_covarT = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD1_filter50n, dim_reduce_covar=T, "D1_covarT")
+  D1_VIM_covarF = get_VIM_RF(clinic_varsD, "OFI.v.DEN", comboD1_filter50n, dim_reduce_covar=F, "D1_covarF")
+  D1_VIM_covarT = get_VIM_RF(clinic_varsD, "OFI.v.DEN", comboD1_filter50n, dim_reduce_covar=T, "D1_covarT")
   D1_VIM = merge(D1_VIM_covarT, D1_VIM_covarF, by="row.names", all=T)
   
-  D2_VIM_covarF = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD2_filter50n, dim_reduce_covar=F, "D2_covarF")
-  D2_VIM_covarT = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD2_filter50n, dim_reduce_covar=T, "D2_covarT")
+  D2_VIM_covarF = get_VIM_RF(clinic_varsD, "OFI.v.DEN", comboD2_filter50n, dim_reduce_covar=F, "D2_covarF")
+  D2_VIM_covarT = get_VIM_RF(clinic_varsD, "OFI.v.DEN", comboD2_filter50n, dim_reduce_covar=T, "D2_covarT")
   D2_VIM = merge(D2_VIM_covarT, D2_VIM_covarF, by="row.names", all=T)
   
-  D3_VIM_covarF = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD3_filter50n, dim_reduce_covar=F, "D3_covarF")
-  D3_VIM_covarT = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD3_filter50n, dim_reduce_covar=T, "D3_covarT")
+  D3_VIM_covarF = get_VIM_RF(clinic_varsD, "OFI.v.DEN", comboD3_filter50n, dim_reduce_covar=F, "D3_covarF")
+  D3_VIM_covarT = get_VIM_RF(clinic_varsD, "OFI.v.DEN", comboD3_filter50n, dim_reduce_covar=T, "D3_covarT")
   D3_VIM = merge(D3_VIM_covarT, D3_VIM_covarF, by="row.names", all=T)
   
-  D5_VIM_covarF = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD5_filter50n, dim_reduce_covar=F, "D5_covarF")
-  D5_VIM_covarT = get_VIM_RF(clinic_varsD, "ND.vs.DEN", comboD5_filter50n, dim_reduce_covar=T, "D5_covarT")
+  D5_VIM_covarF = get_VIM_RF(clinic_varsD, "OFI.v.DEN", comboD5_filter50n, dim_reduce_covar=F, "D5_covarF")
+  D5_VIM_covarT = get_VIM_RF(clinic_varsD, "OFI.v.DEN", comboD5_filter50n, dim_reduce_covar=T, "D5_covarT")
   D5_VIM = merge(D5_VIM_covarT, D5_VIM_covarF, by="row.names", all=T)
   
   ## combine all variable importance lists ##
