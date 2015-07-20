@@ -799,7 +799,7 @@ def plot_VIMs(resultsVIM, outDir, figname):
         VIMlist = ["RF_OOB", "RF_Gini", "SL_Univariate", "SL_VariableDrop"]
         VIM_labels = ["RF - Permutation", "RF - Gini", "SL - Univariate", "SL - Variable Drop"]
         #sort by variable category and then by importance value
-        resultsVIM.sort(columns=['CC_broadcat_sort','RF_OOB'], axis=0, 
+        resultsVIM.sort(columns=['CC_broadcat_sort','SL - Univariate'], axis=0, 
             ascending=[False,True], inplace=True)
         # plot VIM results in one graph
         plt.figure(figsize=(6.9,8))
@@ -869,7 +869,7 @@ def main():
     outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients ##
-    NoOFI = True #only applies to is.DHF_DSS analyses
+    NoOFI = False #only applies to is.DHF_DSS analyses
 
     ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
     NoInitialDHF = True #only applies to is.DHF_DSS analyses (should generally select True)
