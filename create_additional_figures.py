@@ -85,16 +85,16 @@ def get_colors():
 def main():
 
     ## Choose which plots to create ##
-    create_master_barplot = False
+    create_predSets_barplot = False
     create_impDum_barplot = True
     create_testData_barplot = False 
 
     ## Choose outcome variable ##
-    outcome = "is.DEN"  
-    #outcome = "is.DHF_DSS"
+    #outcome = "is.DEN"  
+    outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients ##
-    NoOFI = False 
+    NoOFI = False
 
     ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
     NoInitialDHF = True 
@@ -118,7 +118,7 @@ def main():
     patient_sample = "hospital_only"
 
     ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors ##
-    if create_master_barplot==True:
+    if create_predSets_barplot==True:
         #combine results across these predictor sets
         predictor_desc_list = ["covarlist_all", "covarlist_noUltraX",
                             "covarlist_CohortRestrict","covarlist_genOnly"]
@@ -218,9 +218,9 @@ def main():
         patient_desc = ['Hospital + clinic with study indicator (CV results)',
                         'Hospital + clinic without study indicator (CV results)',
                         'Hospital only (CV results)',
-                        'Predictions for hospital after fitting to clinic',
+                        'Predictions for hospital after training with clinic',
                         'Clinic only (CV results)',
-                        'Predictions for clinic after fitting to hospital']
+                        'Predictions for clinic after training with hospital']
         predictor_desc = "covarlist_CohortRestrict"
         figName   = FileNamePrefix + '_' + predictor_desc + '_TestSets' 
         tableName = FileNamePrefix + '_' + predictor_desc + '_cohortTest' + '.txt'

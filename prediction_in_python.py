@@ -123,7 +123,6 @@ def get_predictor_desc(file_name, outcome, NoOFI):
     #use binary equivalents of the categorical predictors
         #Torniquete -- less than 20 vs. 20+ = is.torniquete20plus
         #Pulso  -- strong or moderate vs. rapid or not palpable = is.pulse_danger
-        #IR -- first vs. secondary infection (DENV positive only) = is.FirstInfection
         #PCR -- 1, 2, or 3 serotype (DENV positive only) = is.serotype1,  etc.
     if predictors.count("Torniquete")>0 :
         predictors = [w.replace("Torniquete","is.torniquete20plus") for w in predictors]
@@ -437,7 +436,8 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
     mean = dummy.DummyClassifier(strategy='most_frequent') #predict most frequent class
 
     #very simple CART (for comparison sake)
-    CART = tree.DecisionTreeClassifier(max_depth=10) 
+    CARTparams = {'max_depth': list(np.arange(21)[1:]) } #try max_depths of 1 thru 20
+    CARTune = grid_search.GridSearchCV(tree.DecisionTreeClassifier(), CARTparams)
 
     #todo: consider adding a shrinkage threshold (chosen via gridsearch)
     centroids = neighbors.NearestCentroid(metric='euclidean', shrink_threshold=None)
@@ -448,12 +448,12 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
     myQDA = QDA() #produces terrible results - todo: figure out why and add back in
 
     GBparams = {'max_depth':[2,3,4], 'min_samples_split':[2,4], 
-        'min_samples_leaf':[1,3],
+        'min_samples_leaf':[1,3], 'n_estimators':[100],
         'max_features':[None], 'max_leaf_nodes':[None], 'loss':['deviance']}
     GBtune = grid_search.GridSearchCV(GradientBoostingClassifier(), GBparams,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
 
-    adaBoost=AdaBoostClassifier() 
+    adaBoost=AdaBoostClassifier(n_estimators=500) 
 
     #n_estimators is number of trees in forest (R default is 1000)
     #max_features is the number of features to consider when looking for best split
@@ -461,18 +461,17 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
         RF_max_features = [ int(math.ceil(math.sqrt(p))) ]
     else:
         RF_max_features = [ int(math.ceil(math.sqrt(p))), int(math.ceil(p/3)) ]
-    RFparams = {'n_estimators':[1000],  'max_features': RF_max_features}
- 
+    RFparams = {'n_estimators':[500],  'max_features': RF_max_features}
     RFtune = grid_search.GridSearchCV(RandomForestClassifier(), RFparams,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
 
-    NNparams = {'n_neighbors':[3,5,7]}
+    NNparams = {'n_neighbors':[3,5,7,9,11,13], 'weights':['uniform','distance']}
     NNtune = grid_search.GridSearchCV(neighbors.KNeighborsClassifier(), NNparams,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
 
     #C is the inverse of regularization strength.  Default is 1.
         #alpha (parameter in SGD and Ridge) is defined as (2*C)^-1
-    L1params = {'penalty':['l1'], 'C':[.5, 1, 1.5], 'solver':['liblinear']}
+    L1params = {'penalty':['l1'], 'C':[.5, 1, 1.3, 1.5, 1.7], 'solver':['liblinear']}
     L1tune = grid_search.GridSearchCV(linear_model.LogisticRegression(), L1params,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
 
@@ -481,8 +480,8 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
     if nobs+20 > p:
         alpha_start = .0001
     else:
-        alpha_start = .001 #need greater dimension reduction when p>>n 
-    L2params = {'alpha':list(np.linspace(start=alpha_start, stop=2, num=100))}
+        alpha_start = .0001 #need greater dimension reduction when p>>n 
+    L2params = {'alpha':list(np.linspace(start=alpha_start, stop=1, num=100))}
     L2tune = grid_search.GridSearchCV(RidgeClassifier(normalize=True), L2params,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid) 
 
@@ -521,19 +520,20 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
     LDA_noshrink = LDA(shrinkage=None)   
      
     if (testing==True):
-        libs=[CART, adaBoost] #for testing
-        libnames = []
+        libs=[tree.DecisionTreeClassifier()] #for testing
+        libnames = ["tree"]
     elif (univariate==True):
-        #libs=[mean, CART]
-        #libnames=["Mean","CART"]
-        libs=[mean, CART, LDA_noshrink, myQDA, NNtune]
-        libnames=["Mean","CART","LDA","QDA","N.Neighbor"] 
+        #CART = tree.DecisionTreeClassifier()
+        #libs=[CART, CART]
+        #libnames=["C1","C2"]
+        libs=[CARTune, mean, LDA_noshrink, myQDA, NNtune]
+        libnames=["CART","Mean","LDA","QDA","N.Neighbor"] 
     else:
-        libs=[mean, CART, centroids, LDA_shrink, GBtune, adaBoost, RFtune, 
-            NNtune,L1tune, L2tune, ENtune, svmL2tune, svmRBFtune]
+        libs=[mean, CARTune, centroids, LDA_shrink, GBtune, adaBoost, RFtune, 
+            NNtune, L1tune, L2tune, svmL2tune] #svmRBFtune, ENtune -- wacky results
         libnames=["Mean", "CART", "Centroids", "LDA+shrinkage", "Gradient Boost", 
             "AdaBoost", "Random Forests", 
-            "N.Neighbor", "Logit-L1", "Logit-L2", "Elastic Net", "SVM-L2", "SVM-RBF"]
+            "N.Neighbor", "Logit-L1", "Logit-L2", "SVM-L2"] #"SVM-RBF", "Elastic Net"
     if libnames == []:
         libnames=[est.__class__.__name__ for est in libs]
 
@@ -594,6 +594,12 @@ def results_for_library(X, y, cv_gen, libs, libnames, predDF, resultsDF):
                 preds = cross_val_predict_proba(est, X, y, cv_gen)[:, 1]
         else:
             preds = cross_val_predict(est, X, y, cv_gen)
+  
+        #optional: take a look at parameters chosen via grid search 
+        est.fit(X,y)
+        if hasattr(est, "best_estimator_"):
+            print "Optimal estimator: " , est.best_estimator_
+            print "Parameters chosen (via CV): " , est.best_params_ 
 
         #save the predicted values for each algorithm in one dataframe
         predDF.insert(loc=len(predDF.columns), column=libnames[counter], value= preds)
@@ -602,11 +608,11 @@ def results_for_library(X, y, cv_gen, libs, libnames, predDF, resultsDF):
                                     cv_gen, 0.95, resultsDF)
     return predDF, resultsDF
 
-def plot_cvAUC(resultsDF, plot_title, figName, outDir, run_MainAnalysis):
+def plot_cvAUC(resultsDF, plot_title, figName, outDir, ran_Analysis):
     """
         Create plots of cvAUC along with error bars
     """
-    if run_MainAnalysis==True:
+    if ran_Analysis==True:
         labels = resultsDF.index.values #array with method labels
     #hacky way to compensate for lack of index values in imported csv -- tofix
     else:
@@ -632,11 +638,18 @@ def plot_cvAUC(resultsDF, plot_title, figName, outDir, run_MainAnalysis):
     #plt.show() 
     plt.close()
     
-def plot_ROC(y, predDF, figName, outDir):
+def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
     """
         Plots the ROC curves using actual y and predicted probabilities
     """
-    libnames = predDF.columns.values    
+    #get list of libnames, ordered by cvAUC
+    if ran_Analysis==True:
+        libnames = resultsDF.index.values #array with method labels
+    #hacky way to compensate for lack of index values in imported csv -- tofix
+    else:
+        libnames = resultsDF['Unnamed: 0']
+    
+    plt.figure(figsize=(6.5,6.5))
     for counter, libname in enumerate(libnames):
         pred_prob = predDF[libname]
         #points to plot
@@ -678,7 +691,7 @@ def add_info_and_print(resultsDF, include_imp_dums, screenType, pred_count,
     return resultsDF
 
 def get_VIM1(predictors, df, y, outName, FileNamePrefix, predictor_desc, patient_sample,
-                    libs, libnames, run_VIM1):
+                    include_imp_dums, screenType, libs, libnames, run_VIM1, outDir):
     """
         ## Run super learner in absence of each variable separately ##
         # (could consider also dropping the corresponding imputation dummy)
@@ -698,6 +711,7 @@ def get_VIM1(predictors, df, y, outName, FileNamePrefix, predictor_desc, patient
             resultsDFvim1 = get_performance_vals(y, SL_predsvim1, var, 
                                             cv_gen, 0.95, resultsDFvim1)
         # Add results from Super Learner without dropping any variables (for comparison)
+        X = df[predictors].astype(float).values
         SL_predsvim1 = cross_val_predict_proba(sl, X, y, cv_gen)
         resultsDFvim1 = get_performance_vals(y, SL_predsvim1, "Super Learner", 
                                             cv_gen, 0.95, resultsDFvim1)
@@ -705,12 +719,13 @@ def get_VIM1(predictors, df, y, outName, FileNamePrefix, predictor_desc, patient
             #currently in index but that created merge problem later
         resultsDFvim1['varname'] = resultsDFvim1.index.values
         # Add columns with additional methods info, print results to text file #
+        pred_count = len(predictors) - 1
         resultsDFvim1 = add_info_and_print(resultsDFvim1, include_imp_dums, screenType,
                 pred_count, patient_sample, df.shape[0], myName, 
                 outDir, print_results=True)
     else:
         # Read in text file if you do not wish to re-create VIM results
-        resultsDFvim1 = pd.read_csv(outDir + 'R_' + myName, sep=',')
+        resultsDFvim1 = pd.read_csv(outDir + 'R_' + myName + '.txt', sep=',')
     # Calculate VIM measure and keep only relevant variables
     # We want var importance to be 100*(cvAUC_SL_noDrops - cvAUC)
     resultsDFvim1['cvAUC'] *= 100
@@ -721,7 +736,7 @@ def get_VIM1(predictors, df, y, outName, FileNamePrefix, predictor_desc, patient
 
 
 def get_VIM2(predictors, df, y, outName, FileNamePrefix, predictor_desc, 
-                patient_sample, run_VIM2):
+                include_imp_dums, screenType, patient_sample, run_VIM2, outDir):
     """
         ## Run super learner with each variable separately -- report cvAUC 
         #use SL library that only includes algorithms that work with 1 predictor
@@ -729,6 +744,7 @@ def get_VIM2(predictors, df, y, outName, FileNamePrefix, predictor_desc,
     libsUni, libnamesUni = build_library( p=len(predictors), nobs=df.shape[0], 
                         screen=None, testing=False, univariate=True)
     print "univariate libnames: ", libnamesUni
+    meanlib = [dummy.DummyClassifier(strategy='most_frequent')]
     myName = 'VIM2_' + outName
     if run_VIM2==True:
         resultsDFvim2 = pd.DataFrame() #empty df to hold performance measures
@@ -736,7 +752,26 @@ def get_VIM2(predictors, df, y, outName, FileNamePrefix, predictor_desc,
             print "VIM2 for: " , var
             Xvim2 = df[[var]].astype(float).values     
             cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
-            sl = SuperLearner(libsUni, loss="nloglik", K=5, 
+            #cannot do prediction if not enough variation in data
+            #identify binary predictors that have fewer than 10 obs in any group 
+                #todo: get var list from clinic_VarsD.txt rather than manually entering here
+            binary_vars = ["Dolor_Abdominal","AlterConciencia","Artralgia",
+            "Ascitis","Escalofrio","ExtremidadesFrias","Tos","CianosisOP","DificultadRes",
+            "Epigastralgia","Cefalea","HIPOTERM","Ictericia","Mialgia","CONGNASAL","NAUSEAS",
+            "Palidez","Derrame_","Perdida_Apetito","Llenado_Capilar","PulsePressure","Rash",
+            "Dolor_ocular","GargantaEnrrojecida","Sudoracion","Taquicardia","Vomito","Encias",
+            "Equimosis","Nariz","Hematoma","Hematuria","Hematemesis","Hemoptisis",
+            "Hipermenorrea","Melena","PetequiasEspontaneas","Purpura","Subconjuntival",
+            "Vaginal","Venopuncion","Hemoconcentracion","HematocritoElev",
+            "Ascitis_Signos_Radiologicos","Fluido_Para_Peri_Renal","Fluido_Perivesicular",
+            "Edema_","Alveolar","Cardiomegalia","Interticial","Neumonia"]
+            valcounts = df.groupby(var).size()
+            if var in binary_vars and (min(valcounts) < 5 or valcounts.shape[0]==1) :
+                print "Too few values for prediction - assuming no importance - run mean"
+                sl = SuperLearner(meanlib, loss="nloglik", K=5, 
+                                stratifyCV=True, save_pred_cv=True)    
+            else:
+                sl = SuperLearner(libsUni, loss="nloglik", K=5, 
                                 stratifyCV=True, save_pred_cv=True)
             SL_predsvim2 = cross_val_predict_proba(sl, Xvim2, y, cv_gen)
             resultsDFvim2 = get_performance_vals(y, SL_predsvim2, var, 
@@ -745,12 +780,14 @@ def get_VIM2(predictors, df, y, outName, FileNamePrefix, predictor_desc,
             #currently in index but that created merge problem later
         resultsDFvim2['varname'] = resultsDFvim2.index.values
         # Add columns with additional methods info, print results to text file #
+        print "resultsDFvim2: " , resultsDFvim2
+        pred_count = 1 #number of predictors (for output data)
         resultsDFvim2 = add_info_and_print(resultsDFvim2, include_imp_dums, screenType,
                 pred_count, patient_sample, df.shape[0], myName, 
                 outDir, print_results=True)
     else:
         # Read in text file if you do not wish to re-create VIM results
-        resultsDFvim2 = pd.read_csv(outDir + 'R_' + myName, sep=',')
+        resultsDFvim2 = pd.read_csv(outDir + 'R_' + myName + '.txt', sep=',')
     # Calculate VIM measure and keep only relevant variables
     resultsDFvim2['SL_Univariate'] = resultsDFvim2['cvAUC']*100
     resultsDFvim2 = resultsDFvim2[['varname','SL_Univariate']]
@@ -820,11 +857,11 @@ def main():
     ###################### Choices, choices, choices ##########################
 
     ## Choose which parts of code to run ##
-    run_MainAnalysis = True  # if false, will expect to get results from file
-    plot_MainAnalysis = True # if true, will create figures for main analysis
-    run_testdata = False #true means to get predictions for independent test set
+    run_MainAnalysis = False  # if false, will expect to get results from file
+    plot_MainAnalysis = False  # if true, will create figures for main analysis
+    run_testdata = False  # true means to get predictions for independent test set
     run_VIM = True  # if false, none of the VIM code will be run
-    run_VIM1 = True # if false, will expect to obtain VIM1 results from file
+    run_VIM1 = False # if false, will expect to obtain VIM1 results from file
     run_VIM2 = True  # if false, will expect to obtain VIM2 results from file
 
     ## Choose outcome variable ##
@@ -832,10 +869,10 @@ def main():
     outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients ##
-    NoOFI = False 
+    NoOFI = True #only applies to is.DHF_DSS analyses
 
     ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
-    NoInitialDHF = True #applicable only for is.DHF_DSS analyses
+    NoInitialDHF = True #only applies to is.DHF_DSS analyses (should generally select True)
 
     ## Choose patient sample ##
     #patient_sample = "all" 
@@ -859,8 +896,6 @@ def main():
 
     ## Choose input data (this data was prepared in R) ##
     inputData = "clin12_full_wImputedRF1.txt"
-        # "clin12_full_wImputedRF1.txt" - data with imputations using cohort+hospit data
-        # "clin12_hospit_wImputedRF1.txt" - data with imputations using hospit data only
  
     ## Choose variable screening method (if any) ##
     screenType = None #current options: None, "univariate", "L1"
@@ -868,9 +903,9 @@ def main():
 
     ## Choose whether to standardize predictors (will not apply to imputation dummies)
     std_vars = True 
-
-    ## choose a different FileNamePrefix for testing to avoid writing over legit results
-    #FileNamePrefix = "Exper"
+    
+    ## Use a tiny SL library for testing purposes
+    testlib = False #false if you want to run normally
 
     ############# you are now done with choosing your parameters ##############
     ###########################################################################
@@ -908,6 +943,7 @@ def main():
 
     ## Preliminary list of predictors ##
     predictors_prelim = get_predictor_desc(predictor_desc+".txt", outcome, NoOFI)
+    #predictors_prelim = ['Melena']  #test
     #print "Original predictor list:\n" , predictors_prelim
 
     ## Create pandas dataframe with data that was cleaned in R ##
@@ -919,7 +955,7 @@ def main():
     ## Build library of classifiers ##
     screen, pred_count = get_screen(screenType, screenNum, predictors)
     libs, libnames = build_library( p=len(predictors), nobs=df.shape[0], 
-                            screen=screenType, testing=False)
+                            screen=screenType, testing=testlib)
     print "libnames: ", libnames
 
     ## Keep only columns in predictors list, create arrays ##
@@ -956,16 +992,16 @@ def main():
                     outDir, print_results=True)
     else:
         print "reading from results files"
-        #predDF = pd.read_csv(outDir + 'P_' + outName + '.txt', sep=',') 
-        #resultsDF = pd.read_csv(outDir + 'R_' + outName + '.txt', sep=',') 
+        predDF = pd.read_csv(outDir + 'P_' + outName + '.txt', sep=',') 
+        resultsDF = pd.read_csv(outDir + 'R_' + outName + '.txt', sep=',') 
 
     if plot_MainAnalysis == True:
         ## Make bargraphs of cvAUC results ##
         plot_title = comparison_groups+predictor_desc+restrictions
         plot_cvAUC(resultsDF, plot_title="", figName=outName, 
-                    outDir=outDir, run_MainAnalysis=run_MainAnalysis)
+                    outDir=outDir, ran_Analysis=run_MainAnalysis)
         ## ROC curve plots ##
-        plot_ROC(y, predDF, outName, outDir)
+        plot_ROC(y, predDF, resultsDF, outName, outDir, run_MainAnalysis)
 
     ## Get predictions and performance measures for test (cohort) data ##
     if run_testdata == True:
@@ -983,7 +1019,7 @@ def main():
         resultsDFnew = add_info_and_print(resultsDF, include_imp_dums, screenType,
                     pred_count, testSample+"Test", df.shape[0], myoName, 
                     outDir, print_results=True)
-        plot_ROC(ynew, predDFnew, myoName, outDir)
+        plot_ROC(ynew, predDFnew, resultsDFnew, myoName, outDir, ran_Analysis=True)
 
     ## Get variable importance measures ##
         #takes about 8 min per variable when run on Nandi (~11 hr for 85 vars)
@@ -991,13 +1027,17 @@ def main():
 
         #get results from the "variable drop" importance method      
         resultsDFvim1 = get_VIM1(predictors, df, y, outName, FileNamePrefix, 
-                                predictor_desc, patient_sample,libs, libnames, run_VIM1)
+                                predictor_desc, include_imp_dums, screenType, 
+                                patient_sample, libs, libnames, run_VIM1, outDir)
         #get results from the "univariate" importance method
         resultsDFvim2 = get_VIM2(predictors, df, y, outName,
-                        FileNamePrefix, predictor_desc, patient_sample, run_VIM2)
+                        FileNamePrefix, predictor_desc, include_imp_dums, screenType, 
+                        patient_sample, run_VIM2, outDir)
 
         ## Read in VIMs from random forests run in R ##
-        VIM_rf = pd.read_csv(inputsDir + 'VIM_rf_noimputs.txt', sep='\t') 
+            #currently just done for hospit_only, covarlist_all
+        VIMout_from_R = "VIM_rf_" + FileNamePrefix + FileNameSuffix
+        VIM_rf = pd.read_csv(inputsDir + VIMout_from_R + '.txt', sep='\t') 
         VIM_rf = VIM_rf.rename(columns={'variable.name.in.final.data': 'varname'})
 
         ## Combine VIMs into 1 dataframe ##
@@ -1007,8 +1047,7 @@ def main():
                             on="varname", how="inner", sort=False)
 
         ## Plot VIM results in one graph ##
-        plot_VIMs(resultsVIM, outDir,
-            'VIMs_' + FileNamePrefix + '_' + predictor_desc + '_noimputes')
+        plot_VIMs(resultsVIM, outDir, 'VIMs_' + outName)
     
     ## Ouput execution time info ##
     log_statement("Total execution time: {} minutes".format(

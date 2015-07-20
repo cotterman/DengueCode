@@ -43,7 +43,6 @@ from sklearn import svm, linear_model, neighbors, dummy, tree
 from sklearn.pipeline import Pipeline
 #from sklearn.linear_model import LogisticRegressionCV
 
-sys.path.append('/home/ccotter/temp_Dengue_code/SuPyLearner/supylearner')
 import core #this is the main SuPyLearner code
 from core import SuperLearner, cv_superlearner
 from cross_val_utils import cross_val_predict_proba
@@ -51,6 +50,8 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
+sys.path.append('/home/ccotter/temp_Dengue_code/github_dengue') #home PC
+sys.path.append('/home/ccotter/temp_Dengue_code/SuPyLearner/supylearner')
 inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
 outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
 #inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC diff login
@@ -66,6 +67,17 @@ df = pd.read_csv(inputsDir + "clin12_full_wImputedRF1.txt", sep='\t',
         true_values=["True","Yes"], false_values=["False","No"], na_values=['NaN','NA']) 
     #df["is.DEN"] = df["is.DEN"].astype(int) #ML funcs give predicted probs only for int outcomes
 df[["is.female"]] = (df[["Sexo"]]=="female").astype(int) 
+
+#remove rows according to parameter values
+df = df[df.WHO_initial_given!="DSS"] 
+df = df[df.WHO_initial_given!="DHF"] 
+df = df[df.DENV=="Positivo"] #limit to only DENV positive patients
+df = df[df.Study=="Hospital"] #limit to only hospital patients
+X = df[['Vomito','Encias'].astype(float).values
+y = df['is.DEN'].astype(int).values
+cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
+sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+
 df.groupby('Mialgia').size() #gives counts for each value of Mialgia
 df_sub = df[['Eosi','Dolor_ocular','DaysSick','Vaginal','is.DEN','code']]
 df_sub.head()
@@ -88,6 +100,29 @@ std_df.head() #perfecto
 
 f = open(inputsDir + "covarlist_all.txt", 'r')
 predictors = f.read().splitlines()
+
+
+###############################################################################
+#################### Experiment with super learner ############################
+###############################################################################
+
+df = pd.read_csv(inputsDir + "clin12_full_wImputedRF1.txt", sep='\t', 
+        true_values=["True","Yes"], false_values=["False","No"], na_values=['NaN','NA']) 
+
+#remove rows according to parameter values
+df = df[df.WHO_initial_given!="DSS"] 
+df = df[df.WHO_initial_given!="DHF"] 
+df = df[df.DENV=="Positivo"] #limit to only DENV positive patients
+df = df[df.Study=="Hospital"] #limit to only hospital patients
+X = df[['Vomito','Encias']].astype(float).values
+y = df['is.DEN'].astype(int).values
+
+#super learner
+cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
+libs, libnames = build_library( p=2, nobs=df.shape[0], screen=None, testing=False,univariate=True)
+sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+sl.fit(X, y)
+sl.summarize()
 
 
 
