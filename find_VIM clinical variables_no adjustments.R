@@ -8,53 +8,129 @@ library(tmle.npvi) #works for continuous treatments but must provide reference v
   #For now, I could just do the variable importance stuff for general signs & symptoms, which I have already dichotomized
     #or, forget about tMLE altogether
 
-### Obtain data and variable list ###
-myhospit = clin12_full_wImputedRF1[which(clin12_full_wImputedRF1$Study=="Hospital"),]
-#obtain list of clinical variables to include
-clinic_vars = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
-                                  eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=50,
-                                  XD=myhospit, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
-print(clinic_vars)
-print(length(clinic_vars))
-#Here is an opportunity to add imputation dummies (include_imp_dum="all")
-  #this function is created in "prediction_functions_v2.R"
-  #It will also eliminate IR, PCR for ND.vs.DEN
-myvars = get_clinical_predictors("ND.vs.DEN", clinic_varsD, clinic_vars, myhospit, include_imp_dums="all") #toggle this
-#myvars = get_clinical_predictors("ND.vs.DEN", clinic_varsD, clinic_vars, myhospit, include_imp_dums="None") #toggle this
-#in python we were not allowed factors so we used the binary version of the pulse and torniquete and Sexo variables  
-#since we are comparing VIMs in python with VIMs here, make all variables equivalent
-prelim = myvars[myvars %in% c("Torniquete","Pulso","Sexo")==FALSE] #remove vars
-newlist = c(prelim, "is.torniquete20plus", "is.pulse_danger","is.female") #add vars to replace them
-#create the is.female variable
-myhospit[which(myhospit$Sexo=="female"), "is.female"] = 1
-myhospit[which(myhospit$Sexo=="male"), "is.female"] = 0
-#make outcome a factor so RF will do classification
-myhospit[which(myhospit$is.DEN==TRUE), "DEN_dum"] = "1"
-myhospit[which(myhospit$is.DEN==FALSE), "DEN_dum"] = "0"
-myhospit$DEN_dum = factor(myhospit$DEN_dum)
 
-### Run random forest and output VIMs ###
-rf = randomForest(x=myhospit[,c(newlist)], y=myhospit[,"DEN_dum"], ntree=500, nPerm=1, importance=TRUE)
-VIM_OOB = importance(rf, type=1) #"mean decrease accuracy" from permuting variable in oob data, divided by SD
-oob = as.data.frame(cbind(as.numeric(VIM_OOB), rownames(VIM_OOB) ))
-VIM_Gini = importance(rf, type=2) #mean decrease Gini 
-gini = as.data.frame(cbind(as.numeric(VIM_Gini), rownames(VIM_Gini) ))
-VIM_rf = merge(oob, gini, by="V2")
-colnames(VIM_rf) = c("varname","RF_OOB","RF_Gini")
-#sort -- grr.....values are interpreted as chars not numerics for sorting.  strange.
-VIM_rf = VIM_rf[order(VIM_rf$RF_OOB),]
-#add proper variable names for displaying in tables/graphs and variable categories
-#first, modify the usual clinic_varsD to reflect the binary vars that we are now using
-mod_clinic_varsD = clinic_varsD
-mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="Sexo"),"variable.name.in.final.data"]="is.female"
-mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="Pulso"),"variable.name.in.final.data"]="is.pulse_danger"
-mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="Torniquete"),"variable.name.in.final.data"]="is.torniquete20plus"
-VIM_rf_plus = merge.data.frame(mod_clinic_varsD[,c("variable.name.in.final.data","CC_name","CC_category","CC_type",
-                                                   "CC_description","in.cohort.data","CC_broadcat_sort", "CC_cat_sort")], 
-                               VIM_rf, by.x="variable.name.in.final.data", by.y="varname", in.y=all)
-#now export so we can read it into python and make graphs with other VIMs
-write.table(VIM_rf_plus, paste(outputsDir,"VIM_rf_withimputs.txt", sep=""), sep="\t") #toggle this
-#write.table(VIM_rf_plus, paste(outputsDir,"VIM_rf_noimputs.txt", sep=""), sep="\t") #toggle this
+
+get_rfVIMs = function(outcome, include_imp_dums, NoOFI){
+  
+  ### Parameter options ###
+  #outcome = "is.DEN", "is.DHF_DSS"
+  #include_imp_dums = "all", "None", "Only"
+  #NoOFI = TRUE, FALSE
+
+  ### Parameters based on choosen options ###
+  if (outcome=="is.DEN") {
+    FileNamePrefix = "OFI.v.DEN" #use all samples; exclude PCR predictors
+    NoInitialDHF = FALSE #whether to exclude samples with initial DHF/DSS diagnosis
+    NoOFI = FALSE
+  }
+  if (outcome=="is.DHF_DSS"){
+    NoInitialDHF = TRUE #whether to exclude samples with initial DHF/DSS diagnosis
+    if (NoOFI == TRUE) {
+      FileNamePrefix = "DF.v.DHFDSS"
+    }
+    else{
+      FileNamePrefix = "OFIDF.v.DHFDSS"
+    }
+  }
+  ## Suffix to indicate use of imputation dummies
+  if (include_imp_dums=="Only") {
+    FileNameSuffix = "_dumsOnly"
+  }
+  if (include_imp_dums=="all") {
+      FileNameSuffix = "_impDums"
+  } 
+  if (include_imp_dums=="None") {
+    FileNameSuffix = ""  # all covariates, but no missing indicators
+  }
+  
+  ### Obtain data and variable list ###
+  
+  #Use just hospital data
+  myhospit = clin12_full_wImputedRF1[which(clin12_full_wImputedRF1$Study=="Hospital"),]
+  #drop patients with initial DHF/DSS Dx if specified
+  if (NoInitialDHF==TRUE){
+    myhospit = myhospit[which(myhospit$WHO_initial_given!="DHF" & myhospit$WHO_initial_given!="DSS"),]
+  }
+  
+  #obtain list of clinical variables to include.
+    #this function is created in clean_clinical_data_functions_v2.R
+  clinic_vars = get_clinic_var_list(clinic_varsD, outcome="either", eliminate_vars_with_missings=F, 
+                                    eliminate_constant_vars=T, eliminate_vars_with_minXnomiss=10,
+                                    XD=myhospit, restrict_to_cohort_vars=F, restrict_to_hospit_vars=T, UltraX=T, BloodLab=T)
+  
+  #Here is an opportunity to add imputation dummies (include_imp_dum="all")
+    #this function is created in "prediction_functions_v2.R"
+    #It will also eliminate PCR for OFI.v.DEN analysis
+      #But we will run in this "OFI.v.DEN" mode b/c to avoid dropping the DHF/DSS indicators that now we want to keep
+  myvars = get_clinical_predictors("OFI.v.DEN", clinic_varsD, clinic_vars, myhospit, include_imp_dums=include_imp_dums) 
+  
+  #in python we were not allowed factors so we used the binary version of the categorical variables  
+  #since we are comparing VIMs in python with VIMs here, make all variables equivalent
+  if (include_imp_dums!="Only"){
+    prelim = myvars[myvars %in% c("Torniquete","Pulso","Sexo")==FALSE] #remove vars
+    newlist = c(prelim, "is.torniquete20plus", "is.pulse_danger","is.female") #add vars to replace them
+    #create the is.female variable
+    myhospit[which(myhospit$Sexo=="female"), "is.female"] = 1
+    myhospit[which(myhospit$Sexo=="male"), "is.female"] = 0
+    #serotype will only be used for the DF vs DHF/DSS analysis
+    if (FileNamePrefix == "DF.v.DHFDSS"){
+      newlist = c(newlist, "is.serotype1", "is.serotype2", "is.serotype3")
+    }
+  }
+  else{
+    newlist = myvars
+  }
+  print("Final var list on which to do variable importance")
+  print(newlist)
+  
+  #make outcome a factor so RF will do classification
+  myhospit[which(myhospit[,outcome]==TRUE), "DEN_dum"] = "1"
+  myhospit[which(myhospit[,outcome]==FALSE), "DEN_dum"] = "0"
+  myhospit$DEN_dum = factor(myhospit[,outcome])
+  
+  ### Run random forest and output VIMs ###
+  rf = randomForest(x=myhospit[,c(newlist)], y=myhospit[,"DEN_dum"], ntree=500, nPerm=1, importance=TRUE)
+  VIM_OOB = importance(rf, type=1) #"mean decrease accuracy" from permuting variable in oob data, divided by SD
+  oob = as.data.frame(cbind(as.numeric(VIM_OOB), rownames(VIM_OOB) ))
+  VIM_Gini = importance(rf, type=2) #mean decrease Gini 
+  gini = as.data.frame(cbind(as.numeric(VIM_Gini), rownames(VIM_Gini) ))
+  VIM_rf = merge(oob, gini, by="V2")
+  colnames(VIM_rf) = c("varname","RF_OOB","RF_Gini")
+  #sort -- grr.....values are interpreted as chars not numerics for sorting.  strange.
+  VIM_rf = VIM_rf[order(VIM_rf$RF_OOB),]
+  #add proper variable names for displaying in tables/graphs and variable categories
+  #first, modify the usual clinic_varsD to reflect the binary vars that we are now using
+  mod_clinic_varsD = clinic_varsD
+  mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="Sexo"),"variable.name.in.final.data"]="is.female"
+  mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="Pulso"),"variable.name.in.final.data"]="is.pulse_danger"
+  mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="Torniquete"),"variable.name.in.final.data"]="is.torniquete20plus"
+  VIM_rf_plus = merge.data.frame(mod_clinic_varsD[,c("variable.name.in.final.data","CC_name","CC_category","CC_type",
+                                                     "CC_description","in.cohort.data","CC_broadcat_sort", "CC_cat_sort")], 
+                                 VIM_rf, by.x="variable.name.in.final.data", by.y="varname", in.y=all)
+  #now export so we can read it into python and make graphs with other VIMs
+  VIMout_from_R = paste("VIM_rf_", FileNamePrefix, FileNameSuffix, sep="")
+  write.table(VIM_rf_plus, paste(outputsDir, VIMout_from_R, ".txt", sep=""), sep="\t") 
+}
+
+#no imputation dummies
+get_rfVIMs(outcome="is.DEN", include_imp_dums="None", NoOFI=FALSE)
+get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="None", NoOFI=TRUE)
+get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="None", NoOFI=FALSE)
+#imputation dummies plus clinical feature values
+get_rfVIMs(outcome="is.DEN", include_imp_dums="all", NoOFI=FALSE)
+get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="all", NoOFI=TRUE)
+get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="all", NoOFI=FALSE)
+#imputation dummies only
+get_rfVIMs(outcome="is.DEN", include_imp_dums="Only", NoOFI=FALSE)
+get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="Only", NoOFI=TRUE)
+get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="Only", NoOFI=FALSE)
+
+#check results
+checkme = read.delim(paste(outputsDir,"VIM_rf_DF.v.DHFDSS.txt", sep=""), header=TRUE, nrows=200)
+
+
+
+
 
 
 

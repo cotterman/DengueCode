@@ -342,17 +342,19 @@ merge_lists = function (list1, name1, list2, name2, nameC){
 
 
 #function takes preliminary set of clinical predictors and cleans it up according to fixed and user-supplied criteria
-get_clinical_predictors = function(outcome, clinic_varsD, covarlist, XD, include_imp_dums){
+get_clinical_predictors = function(compare_grps, clinic_varsD, covarlist, XD, include_imp_dums){
   
-  if(outcome=="ND.vs.DEN"){
+  if(compare_grps=="OFI.v.DEN" | compare_grps=="OFIDF.v.DHFDSS"){
     #obtain list of candidate clinical variables to include in ND vs. DEN prediction
     #drop the variables in covarlist that are not applicable to ND vs DEN prediction (e.g., IR and PCR)
     clinic_vars = clinic_varsD[which(clinic_varsD$variable.name.in.final.data %in% covarlist==T 
                                      & clinic_varsD$Use.in.ND.vs.DEN.prediction==1),"variable.name.in.final.data"]
   }
-  if(outcome=="DF.vs.DHF.DSS"){
+  if(compare_grps=="DF.v.DHFDSS"){
     #obtain list of candidate clinical variables to include in DF vs. DHF/DSS prediction
     #drop the variables in covarlist that are not applicable to DF vs. DHF/DSS prediction (e.g., vars that define DHF/DSS)
+      #Note: we have reconsidered analysis and are now using even the vars that are part of the DHF/DSS definition to predict DHF/DSS
+        #however, we are now (in python) dropping patients who already qualify as DHF/DSS in first consultation
     clinic_vars = clinic_varsD[which(clinic_varsD$variable.name.in.final.data %in% covarlist==T 
                                      & clinic_varsD$Use.in.DF.vs.DHF.DSS.prediction==1),"variable.name.in.final.data"]
   }
@@ -366,7 +368,7 @@ get_clinical_predictors = function(outcome, clinic_varsD, covarlist, XD, include
   print(names(which(clinic_vars_missCount>0))) #view 
   
   #add the dummy variables indicating imputed values to list of clinical variables 
-  if(include_imp_dums=="all"){
+  if(include_imp_dums=="all" | include_imp_dums=="Only"){
     allvars = colnames(XD)
     imp_found = allvars[grepl("_imputed", allvars)] #all imputed indicators in data
     imp_imagine = paste(cvars_noMiss, "_imputed", sep="") 
@@ -384,7 +386,12 @@ get_clinical_predictors = function(outcome, clinic_varsD, covarlist, XD, include
     }
     cat("\n imputation indicators to include in regressions (excludes redundancies) \n")
     print(unique_imp_matched)
-    cvars_noMiss = c(cvars_noMiss, unique_imp_matched)
+    if (include_imp_dums=="Only"){
+      cvars_noMiss = unique_imp_matched #include only missing indicators (experiment)
+    }
+    else{
+      cvars_noMiss = c(cvars_noMiss, unique_imp_matched)
+    }
   }
   #add study (cohort v hospital) indicator
   if(include_imp_dums=="study"){
@@ -395,26 +402,27 @@ get_clinical_predictors = function(outcome, clinic_varsD, covarlist, XD, include
 }
 
 #Run a variety of prediction algorithms and output results
-run_predictions = function(clinic_varsD, covarlist, outcome, XD, output_desc, include_imp_dums="all"){
+run_predictions = function(clinic_varsD, covarlist, compare_grps, XD, output_desc, include_imp_dums="all"){
   #clinic_varsD is the data containing information on each clinical/lab/demographic variable in data
   #covarlist is the list of clinical/lab/demogrpahic info to include in the analysis
     #only manipulation to this list will be to eliminate vars inappropriate for predicting outcome
     #and also to eliminate vars that have missing values
-  #outcome: what we want to predict -- either ND.vs.DEN" or "DF.vs.DHF.DSS"
+  #compare_grps: what we want to predict -- either OFI.v.DEN" or "DF.v.DHFDSS" or "OFIDF.v.DHFDSS"
   #XD is the data from which we should find covariate and outcome values
   #output_desc is a string used in output to describe the prediction run
   #include_imp_dums: 
       #if "all" then prediction will be run with all clinical variables found in the data that end with "imputed" and 
          #that match with a clinical variable selected for use in the prediction algorithms (these are indicators of missingness in data)
       #if "study" then include a dummy indicating hospital study, but no other imputation indicators
+      #if "Only" then prediction will be run with only the imputation indicators (and not the actual clinical variable values)
       #otherwise, do not include
   
   #for testing purposes: 
-  #outcome = "ND.vs.DEN"
+  #compare_grps = "OFI.v.DEN"
   #XD = clinical_full_clean
  
   cat("\n\n",paste("***************************************************************************"),"\n")
-  cat(paste("************ Running",outcome,"analysis with", output_desc, " *************"),"\n")
+  cat(paste("************ Running",compare_grps,"analysis with", output_desc, " *************"),"\n")
   cat(paste("***************************************************************************"),"\n")
   
   ###############################################################################
@@ -422,7 +430,7 @@ run_predictions = function(clinic_varsD, covarlist, outcome, XD, output_desc, in
   
   #todo: to get more honest inference, should I imput missing values within the CV step? 
   
-  if(outcome=="DF.vs.DHF.DSS"){
+  if(compare_grps=="DF.v.DHFDSS"){
     #drop OFI observations 
     XD = XD[which(XD$is.DEN==TRUE),]
     #for now, rename DF vs. DHF/DSS outcome to the ND vs. DEN outcome (avoids having to change code)
@@ -434,7 +442,7 @@ run_predictions = function(clinic_varsD, covarlist, outcome, XD, output_desc, in
   }
   
   #obtain list of clinical predictors
-  cvars_noMiss = get_clinical_predictors(outcome, clinic_varsD, covarlist, XD, include_imp_dums)
+  cvars_noMiss = get_clinical_predictors(compare_grps, clinic_varsD, covarlist, XD, include_imp_dums)
   clinicCount = length(cvars_noMiss)
   cat(paste("Total number of clinical variables to include",clinicCount),"\n")
   
