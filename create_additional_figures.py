@@ -86,15 +86,15 @@ def main():
 
     ## Choose which plots to create ##
     create_predSets_barplot = False
-    create_impDum_barplot = True
-    create_testData_barplot = False 
+    create_impDum_barplot = False
+    create_testData_barplot = True 
 
     ## Choose outcome variable ##
-    #outcome = "is.DEN"  
-    outcome = "is.DHF_DSS"
+    outcome = "is.DEN"  
+    #outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients ##
-    NoOFI = False
+    NoOFI = True
 
     ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
     NoInitialDHF = True 
@@ -117,7 +117,7 @@ def main():
     #patient_sample = "cohort_only"
     patient_sample = "hospital_only"
 
-    ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors ##
+    ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors sets ##
     if create_predSets_barplot==True:
         #combine results across these predictor sets
         predictor_desc_list = ["covarlist_all", "covarlist_noUltraX",
@@ -137,6 +137,7 @@ def main():
         plots = []
         for counter, predictor_desc in enumerate(predictor_desc_list):
             tableName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
+            print "tableName: " , tableName
             resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
             measurements = np.array(resultsDF['cvAUC'])
             z = stats.norm.ppf(.95)
@@ -210,7 +211,7 @@ def main():
     ## Bar plot with bars grouped by algorithm and colors indicating patient sample ##
     if create_testData_barplot==True:
         # patient samples to loop through
-        patient_list = ['all_studyDum', 'all_noDums',
+        patient_list = ['all_studyDum', 'all',
                         'hospital_only','hospitalTest',
                         'cohort_only', 'cohortTest'] 
                         #,, 

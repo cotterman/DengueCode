@@ -327,7 +327,7 @@ def add_imput_dummies(include_imp_dums, imp_dums_only, df, predictors_prelim):
             If redundant with is.cohort, ensure that is.cohort is in data  
         If imp_dums_only is true, then return predictor list containing imputation dummies only
     """
-    if (include_imp_dums==True):
+    if (include_imp_dums==True or imp_dums_only==True):
         allvars = df.columns.values #np.array
         imp_found = []
         for var in allvars:
@@ -436,7 +436,10 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
     mean = dummy.DummyClassifier(strategy='most_frequent') #predict most frequent class
 
     #very simple CART (for comparison sake)
-    CARTparams = {'max_depth': list(np.arange(21)[1:]) } #try max_depths of 1 thru 20
+        #try max_depths of 1 thru 20
+        #todo: bump min_samples_leaf up to 2 (1 is default)
+            #ex: 'min_samples_leaf':[2] 
+    CARTparams = {'max_depth': list(np.arange(21)[1:])} 
     CARTune = grid_search.GridSearchCV(tree.DecisionTreeClassifier(), CARTparams)
 
     #todo: consider adding a shrinkage threshold (chosen via gridsearch)
@@ -520,7 +523,7 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
     LDA_noshrink = LDA(shrinkage=None)   
      
     if (testing==True):
-        libs=[tree.DecisionTreeClassifier()] #for testing
+        libs=[CARTune] #for testing
         libnames = ["tree"]
     elif (univariate==True):
         #CART = tree.DecisionTreeClassifier()
@@ -654,6 +657,13 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
         pred_prob = predDF[libname]
         #points to plot
         false_positive_rate, true_positive_rate, thresholds = metrics.roc_curve(y, pred_prob)
+        #output these points to a file (optional)
+        if libname in ['CART','Super Learner']:
+            print counter , ": Retreiving ROC for " , libname
+            d = {'fpr':pd.Series(false_positive_rate,index=thresholds),
+                'tpr':pd.Series(true_positive_rate,index=thresholds)}
+            df = pd.DataFrame(d)
+            df.to_csv(outDir+ 'roc'+libname + '_' + figName + '.txt', sep=",") 
         roc_auc = metrics.auc(false_positive_rate, true_positive_rate)
         #plot of points
         mycolors = get_colors()
@@ -679,8 +689,11 @@ def add_info_and_print(resultsDF, include_imp_dums, screenType, pred_count,
     resultsDF.insert(loc=len(resultsDF.columns), column='patient_sample',
                      value=patient_sample)
     resultsDF.insert(loc=len(resultsDF.columns), column='n', value=nobs)
-    #sort results by decreasing cvAUC
-    resultsDF.sort(columns=['cvAUC','errRate'], axis=0, ascending=False, inplace=True)
+    #sort results by decreasing cvAUC if it exists; otherwise, sort by AUC
+    if patient_sample not in ['hospitalTest','cohortTest']:
+        resultsDF.sort(columns=['cvAUC','errRate'], axis=0, ascending=False, inplace=True)
+    else:
+        resultsDF.sort(columns=['AUC','errRate'], axis=0, ascending=False, inplace=True)
     print "\nCombined results: \n" , resultsDF
     #output results to csv
     if print_results==True:
@@ -745,6 +758,7 @@ def get_VIM2(predictors, df, y, outName, FileNamePrefix, predictor_desc,
                         screen=None, testing=False, univariate=True)
     print "univariate libnames: ", libnamesUni
     meanlib = [dummy.DummyClassifier(strategy='most_frequent')]
+    dumlib = [tree.DecisionTreeClassifier(min_samples_leaf=2, max_depth=2)]
     myName = 'VIM2_' + outName
     if run_VIM2==True:
         resultsDFvim2 = pd.DataFrame() #empty df to hold performance measures
@@ -753,7 +767,7 @@ def get_VIM2(predictors, df, y, outName, FileNamePrefix, predictor_desc,
             Xvim2 = df[[var]].astype(float).values     
             cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
             #cannot do prediction if not enough variation in data
-            #identify binary predictors that have fewer than 10 obs in any group 
+            #identify binary predictors that have fewer than Xx obs in any group 
                 #todo: get var list from clinic_VarsD.txt rather than manually entering here
             binary_vars = ["Dolor_Abdominal","AlterConciencia","Artralgia",
             "Ascitis","Escalofrio","ExtremidadesFrias","Tos","CianosisOP","DificultadRes",
@@ -765,11 +779,20 @@ def get_VIM2(predictors, df, y, outName, FileNamePrefix, predictor_desc,
             "Vaginal","Venopuncion","Hemoconcentracion","HematocritoElev",
             "Ascitis_Signos_Radiologicos","Fluido_Para_Peri_Renal","Fluido_Perivesicular",
             "Edema_","Alveolar","Cardiomegalia","Interticial","Neumonia"]
+            impy = re.findall(".+?_imputed", var) #length will be 1 if var has _imputed suffix
             valcounts = df.groupby(var).size()
-            if var in binary_vars and (min(valcounts) < 5 or valcounts.shape[0]==1) :
-                print "Too few values for prediction - assuming no importance - run mean"
-                sl = SuperLearner(meanlib, loss="nloglik", K=5, 
-                                stratifyCV=True, save_pred_cv=True)    
+            if (var in binary_vars or len(impy)==1):
+                #LDA, QDA, trees with many branches do not make sense for binary predictors
+                    #just use CART with 1 branch (and mean), provided sufficient variation
+                    #otherwise, just use mean
+                if (min(valcounts) < 5 or valcounts.shape[0]==1) :
+                    print "Too few values for prediction - assuming no importance - run mean"
+                    sl = SuperLearner(meanlib, loss="nloglik", K=5, 
+                                stratifyCV=True, save_pred_cv=True)   
+                else:
+                    print "Use dummy library - CART and means"
+                    sl = SuperLearner(dumlib+meanlib, loss="nloglik", K=5, 
+                                stratifyCV=True, save_pred_cv=True) 
             else:
                 sl = SuperLearner(libsUni, loss="nloglik", K=5, 
                                 stratifyCV=True, save_pred_cv=True)
@@ -793,13 +816,22 @@ def get_VIM2(predictors, df, y, outName, FileNamePrefix, predictor_desc,
     resultsDFvim2 = resultsDFvim2[['varname','SL_Univariate']]
     return resultsDFvim2
 
-def plot_VIMs(resultsVIM, outDir, figname):
+def plot_VIMs(resultsVIM, outDir, figname, forget_VIM1):
+        """
+            Plot various indicators of variable importance.
+            VIM measures are expected to be found in resultsVIM dataframe
+            If forget_VIM1 is True, will not plot VIM1
+        """
         #print "to graph: " 
         #print resultsVIM[["varname","RF_OOB","RF_Gini","SL_Univariate","SL_VariableDrop"]]
-        VIMlist = ["RF_OOB", "RF_Gini", "SL_Univariate", "SL_VariableDrop"]
-        VIM_labels = ["RF - Permutation", "RF - Gini", "SL - Univariate", "SL - Variable Drop"]
+        if forget_VIM1==False:
+            VIMlist = ["RF_OOB", "RF_Gini", "SL_Univariate", "SL_VariableDrop"]
+            VIM_labels = ["RF - Permutation", "RF - Gini", "SL - Univariate", "SL - Variable Drop"]
+        else:
+            VIMlist = ["RF_OOB", "RF_Gini", "SL_Univariate"]
+            VIM_labels = ["RF - Permutation", "RF - Gini", "SL - Univariate"]
         #sort by variable category and then by importance value
-        resultsVIM.sort(columns=['CC_broadcat_sort','SL - Univariate'], axis=0, 
+        resultsVIM.sort(columns=['CC_broadcat_sort','SL_Univariate'], axis=0, 
             ascending=[False,True], inplace=True)
         # plot VIM results in one graph
         plt.figure(figsize=(6.9,8))
@@ -817,6 +849,8 @@ def plot_VIMs(resultsVIM, outDir, figname):
             #values to plot
             importances = resultsVIM[VIM]                 
             #plot of points
+            print "importances: ", importances
+            print "positions: ", positions
             plt.scatter(importances, positions, marker=mymarkers[counter],
                 color=clist, label=VIM)
             #add verticle lines to indicate no importance
@@ -850,62 +884,134 @@ def plot_VIMs(resultsVIM, outDir, figname):
         #plt.show()
         plt.close()
 
+def plot_only_VIM2(resultsDFvim2):
+    """
+        Take a look at univariate SL results with imputation dummies
+        note: R's random forests results aren't currently available for imputation dummies
+            #need to fix variable naming problem when adding variable labels from cohortD 
+    """
+    plt.subplots_adjust(left=.3, right=.9, top=.9, bottom=.1)
+    importances = resultsDFvim2['SL_Univariate']
+    positions = np.arange(resultsDFvim2.shape[0]) + .5
+    plt.scatter(importances, positions)
+    plt.tick_params(axis='y', labelsize=6)
+    plt.yticks(positions, np.array(resultsDFvim2["varname"]))
+    plt.savefig(outDir + "VIM2_only" + '.eps', dpi=1200)
+
+def parse_arguments():
+    """Parse arguments provided at the command line level
+    """        
+
+    import argparse
+    parser = argparse.ArgumentParser(description='Predict dengue.')
+    
+    parser.add_argument('--run_MainAnalysis', action='store_true', default=False)
+    parser.add_argument('--plot_MainAnalysis', action='store_true', default=False)
+    parser.add_argument('--run_testdata', action='store_true', default=False)
+    parser.add_argument('--run_VIM', action='store_true', default=False)
+    parser.add_argument('--run_VIM1', action='store_true', default=False)
+    parser.add_argument('--forget_VIM1', action='store_true', default=False)
+    parser.add_argument('--run_VIM2', action='store_true', default=False)
+
+    parser.add_argument('--outcome', dest='outcome')
+
+    parser.add_argument('--NoOFI', action='store_true', default=False)
+    parser.add_argument('--NoInitialDHF', action='store_true', default=False)
+    
+    parser.add_argument('--patient_sample', dest='patient_sample',
+                        default = "hospital_only")
+    parser.add_argument('--testSample', dest='testSample')
+    parser.add_argument('--predictor_desc', dest='predictor_desc',
+                        default = "covarlist_all")
+
+    parser.add_argument('--include_study_dum', action='store_true', default=False)
+    parser.add_argument('--include_imp_dums', action='store_true', default=False)
+    parser.add_argument('--imp_dums_only', action='store_true', default=False)
+
+    parser.add_argument('--inputData', dest='inputData', 
+                        default = "clin12_full_wImputedRF1.txt")
+
+    parser.add_argument('--testlib', action='store_true', default=False)
+
+    args = parser.parse_args()
+
+    return (args.run_MainAnalysis, args.plot_MainAnalysis, args.run_testdata, 
+            args.run_VIM, args.run_VIM1, args.run_VIM2,
+            args.outcome,
+            args.NoOFI, args.NoInitialDHF, 
+            args.patient_sample, args.testSample, args.predictor_desc,
+            args.include_study_dum, args.include_imp_dums, args.imp_dums_only,
+            args.inputData, args.testlib)
+
 def main():
     start_time_overall = time.time()
 
     ###########################################################################
     ###################### Choices, choices, choices ##########################
-
-    ## Choose which parts of code to run ##
-    run_MainAnalysis = False  # if false, will expect to get results from file
-    plot_MainAnalysis = False  # if true, will create figures for main analysis
-    run_testdata = False  # true means to get predictions for independent test set
-    run_VIM = True  # if false, none of the VIM code will be run
-    run_VIM1 = False # if false, will expect to obtain VIM1 results from file
-    run_VIM2 = True  # if false, will expect to obtain VIM2 results from file
-
-    ## Choose outcome variable ##
-    #outcome = "is.DEN"  
-    outcome = "is.DHF_DSS"
-
-    ## Choose whether to exclude OFI patients ##
-    NoOFI = False #only applies to is.DHF_DSS analyses
-
-    ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
-    NoInitialDHF = True #only applies to is.DHF_DSS analyses (should generally select True)
-
-    ## Choose patient sample ##
-    #patient_sample = "all" 
-    #patient_sample = "cohort_only"
-    patient_sample = "hospital_only"
-
-    ## Choose sample to treat as independent test set (if run_testdata=True) ##
-    testSample = "hospital" #options: "cohort" or "hospital
     
-    ## Choose list of variables to use in prediction ##
-    predictor_desc = "covarlist_all"
-    #predictor_desc = "covarlist_noUltraX"
-    #predictor_desc = "covarlist_CohortRestrict"
-    #predictor_desc = "covarlist_genOnly"
-    #predictor_desc = "covarlist_custom"  #one-off analysis
+    params_from_commandline = False
+    # can run via "run_prediction_in_python.py" -- loops thru parameter lists
 
-    ## Choose whether to include  ##
-    include_study_dum = False #true to include is.cohort indicator 
-    include_imp_dums = False #true to add imputation dummies to covariate list
-    imp_dums_only = False #true to run with imputation dummies and no other variable values
+    if params_from_commandline==True:
+        ## Parse parameters provided at command-line level
+        (run_MainAnalysis, plot_MainAnalysis, run_testdata, run_VIM, run_VIM1, run_VIM2,
+         outcome, NoOFI, NoInitialDHF, patient_sample, testSample, predictor_desc,
+         include_study_dum, include_imp_dums, imp_dums_only, inputData, testlib
+        ) = parse_arguments()
 
-    ## Choose input data (this data was prepared in R) ##
-    inputData = "clin12_full_wImputedRF1.txt"
- 
+    else:
+        ## Choose which parts of code to run ##
+        run_MainAnalysis = False  # if false, will expect to get results from file
+        plot_MainAnalysis = False  # if true, will create figures for main analysis
+        run_testdata = False  # true means to get predictions for independent test set
+        run_VIM = True  # if false, none of the VIM code will be run
+        forget_VIM1 = True # if true, will do VIM analysis and graphs without VIM1 output
+        run_VIM1 = False # if false, will expect to obtain VIM1 (multivariate) results from file
+        run_VIM2 = False  # if false, will expect to obtain VIM2 (univariate) results from file
+        only_VIM2 = True # true if just want to plot VIM2 (and not other VIMs)
+
+        ## Choose outcome variable ##
+        outcome = "is.DEN"  
+        #outcome = "is.DHF_DSS"
+
+        ## Choose whether to exclude OFI patients ##
+        NoOFI = True #only applies to is.DHF_DSS analyses
+
+        ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
+        NoInitialDHF = True #only applies to is.DHF_DSS analyses (should generally select True)
+
+        ## Choose patient sample ##
+        #patient_sample = "all" 
+        #patient_sample = "cohort_only"
+        patient_sample = "hospital_only"
+
+        ## Choose sample to treat as independent test set (if run_testdata=True) ##
+        testSample = "hospital" #options: "cohort" or "hospital
+        
+        ## Choose list of variables to use in prediction ##
+        predictor_desc = "covarlist_all"
+        #predictor_desc = "covarlist_noUltraX"
+        #predictor_desc = "covarlist_CohortRestrict"
+        #predictor_desc = "covarlist_genOnly"
+        #predictor_desc = "covarlist_custom"  #one-off analysis
+
+        ## Choose whether to include  ##
+        include_study_dum = False #true to include is.cohort indicator 
+        include_imp_dums = True #true to add imputation dummies to covariate list
+        imp_dums_only = True #true to run with imputation dummies and no other variable values
+
+        ## Choose input data (this data was prepared in R) ##
+        inputData = "clin12_full_wImputedRF1.txt"
+        
+        ## Use a tiny SL library for testing purposes
+        testlib = False #false if you want to run normally
+     
     ## Choose variable screening method (if any) ##
     screenType = None #current options: None, "univariate", "L1"
     screenNum = 5 #applies when screenType != None; else will be ignored
 
     ## Choose whether to standardize predictors (will not apply to imputation dummies)
     std_vars = True 
-    
-    ## Use a tiny SL library for testing purposes
-    testlib = False #false if you want to run normally
 
     ############# you are now done with choosing your parameters ##############
     ###########################################################################
@@ -1006,7 +1112,7 @@ def main():
     ## Get predictions and performance measures for test (cohort) data ##
     if run_testdata == True:
         myoName = FileNamePrefix+'_'+predictor_desc+'_'+testSample+'Test'
-        dfnew = get_data(inputsDir, inputData, NoInitialDHF, 
+        dfnew, predictors = get_data(inputsDir, inputData, NoInitialDHF, 
                 testSample+"_only", NoOFI, outcome, predictors, 
                 include_study_dum, include_imp_dums, imp_dums_only, standardize=std_vars)
         Xnew = dfnew[predictors].astype(float).values
@@ -1014,9 +1120,9 @@ def main():
         predDFnew, resultsDFnew = results_for_testset(X, y, Xnew, ynew, 
                                 libs, libnames, sl_folds=5)
         # print predicted probabilities to file (optional)
-        predDFnew.to_csv(outDir+ 'P_' + myName + '.txt', sep=",") 
+        predDFnew.to_csv(outDir+ 'P_' + myoName + '.txt', sep=",") 
         ## Add columns with additional methods info, print results to text file ##
-        resultsDFnew = add_info_and_print(resultsDF, include_imp_dums, screenType,
+        resultsDFnew = add_info_and_print(resultsDFnew, include_imp_dums, screenType,
                     pred_count, testSample+"Test", df.shape[0], myoName, 
                     outDir, print_results=True)
         plot_ROC(ynew, predDFnew, resultsDFnew, myoName, outDir, ran_Analysis=True)
@@ -1026,28 +1132,38 @@ def main():
     if run_VIM==True:
 
         #get results from the "variable drop" importance method      
-        resultsDFvim1 = get_VIM1(predictors, df, y, outName, FileNamePrefix, 
-                                predictor_desc, include_imp_dums, screenType, 
-                                patient_sample, libs, libnames, run_VIM1, outDir)
+        if forget_VIM1==False:
+            resultsDFvim1 = get_VIM1(predictors, df, y, outName, FileNamePrefix, 
+                                    predictor_desc, include_imp_dums, screenType, 
+                                    patient_sample, libs, libnames, run_VIM1, outDir)
         #get results from the "univariate" importance method
         resultsDFvim2 = get_VIM2(predictors, df, y, outName,
                         FileNamePrefix, predictor_desc, include_imp_dums, screenType, 
                         patient_sample, run_VIM2, outDir)
+        if only_VIM2 == True:
+            plot_only_VIM2(resultsDFvim2)
+        else:
+            ## Read in VIMs from random forests run in R ##
+                #currently just done for hospit_only, covarlist_all
+            VIMout_from_R = "VIM_rf_" + FileNamePrefix + FileNameSuffix
+            VIM_rf = pd.read_csv(inputsDir + VIMout_from_R + '.txt', sep='\t')
+            print VIMout_from_R
+            print "VIM_rf: " , VIM_rf 
+            VIM_rf = VIM_rf.rename(columns={'variable.name.in.final.data': 'varname'})
 
-        ## Read in VIMs from random forests run in R ##
-            #currently just done for hospit_only, covarlist_all
-        VIMout_from_R = "VIM_rf_" + FileNamePrefix + FileNameSuffix
-        VIM_rf = pd.read_csv(inputsDir + VIMout_from_R + '.txt', sep='\t') 
-        VIM_rf = VIM_rf.rename(columns={'variable.name.in.final.data': 'varname'})
+            ## Combine VIMs into 1 dataframe ##
+            if forget_VIM1==False:
+                prelim = pd.merge(resultsDFvim1[['varname','SL_VariableDrop']], VIM_rf, 
+                                    on="varname", how="inner", sort=False)
+            else:
+                prelim = VIM_rf
+            print "resultsDFvim2: " ,  resultsDFvim2
+            resultsVIM = pd.merge(resultsDFvim2[['varname','SL_Univariate']], prelim, 
+                                on="varname", how="inner", sort=False)
+            print "resultsVIM: " , resultsVIM
 
-        ## Combine VIMs into 1 dataframe ##
-        prelim = pd.merge(resultsDFvim1[['varname','SL_VariableDrop']], VIM_rf, 
-                            on="varname", how="inner", sort=False)
-        resultsVIM = pd.merge(resultsDFvim2[['varname','SL_Univariate']], prelim, 
-                            on="varname", how="inner", sort=False)
-
-        ## Plot VIM results in one graph ##
-        plot_VIMs(resultsVIM, outDir, 'VIMs_' + outName)
+            ## Plot VIM results in one graph ##
+            plot_VIMs(resultsVIM, outDir, 'VIMs_' + outName, forget_VIM1)
     
     ## Ouput execution time info ##
     log_statement("Total execution time: {} minutes".format(

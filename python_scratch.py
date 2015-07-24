@@ -50,13 +50,13 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-sys.path.append('/home/ccotter/temp_Dengue_code/github_dengue') #home PC
-sys.path.append('/home/ccotter/temp_Dengue_code/SuPyLearner/supylearner')
-inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
-outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
+#sys.path.append('/home/ccotter/temp_Dengue_code/github_dengue') #home PC
+#sys.path.append('/home/ccotter/temp_Dengue_code/SuPyLearner/supylearner')
+#inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
+#outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
 #inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC diff login
-#inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
-#outDir = "/srv/scratch/ccotter/python_out/" #mitra
+inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
+outDir = "/srv/scratch/ccotter/python_out/" #mitra
 
 
 ###############################################################################
