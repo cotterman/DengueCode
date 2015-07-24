@@ -329,8 +329,8 @@ dev.off()
 ###############################################################################
 
 ## missingness
-# "42 variables never missing for any of the hospital patients while 10 variables are never missing across the combined data"
-df = dh #toggle this
+# "38 variables never missing for any of the hospital patients while 10 variables are never missing across the combined data"
+df = dc #toggle this
 var_missCount = sapply(df[varlist], function(x) sum(is.na(x)))
 table(var_missCount)
 var_nomissCount = sapply(df[varlist], function(x) sum(!is.na(x)))
@@ -401,12 +401,12 @@ dev.off()
 patient_nomissCounth = apply(dh[varlist], MARGIN=1, function(x) sum(!is.na(x)))
 playh = table(patient_nomissCounth)
 var_counts_decreasingh = sort(names(playh), decreasing=TRUE)
-cumsum(play[var_counts_decreasingh])
+cumsum(playh[var_counts_decreasingh])
 #cohort
 patient_nomissCountc = apply(dc[varlist], MARGIN=1, function(x) sum(!is.na(x)))
 playc = table(patient_nomissCountc)
 var_counts_decreasingc = sort(names(playc), decreasing=TRUE)
-cumsum(play[var_counts_decreasingc])
+cumsum(playc[var_counts_decreasingc])
 #graph
 png(paste(resultsDir,"Clinical_vars_perPatient_CandH.png", sep=""), width=800, height=500)
 par(mar=c(5,6,4,2)+.1, cex=1.6) #default is  c(5, 4, 4, 2) + 0.1

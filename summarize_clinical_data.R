@@ -1,5 +1,15 @@
 
-### Basic summary of clinical and lab variables ###
+### Basic summary of clinical and lab variables for qual ###
+
+####### Find newer, v2 of this code !!!!!!!!!!!!!!!!!! ############
+
+
+
+
+
+
+
+
 
 ## Summarize lab and clinical data ##
 summarize_clinical(clinical_full_clean)
