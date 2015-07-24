@@ -16,6 +16,10 @@ get_rfVIMs = function(outcome, include_imp_dums, NoOFI){
   #outcome = "is.DEN", "is.DHF_DSS"
   #include_imp_dums = "all", "None", "Only"
   #NoOFI = TRUE, FALSE
+  #test
+  outcome="is.DEN"
+  include_imp_dums="Only"
+  NoOFI=FALSE
 
   ### Parameters based on choosen options ###
   if (outcome=="is.DEN") {
@@ -50,6 +54,10 @@ get_rfVIMs = function(outcome, include_imp_dums, NoOFI){
   #drop patients with initial DHF/DSS Dx if specified
   if (NoInitialDHF==TRUE){
     myhospit = myhospit[which(myhospit$WHO_initial_given!="DHF" & myhospit$WHO_initial_given!="DSS"),]
+  }
+  #drop the DEN negative patients if specified
+  if (NoOFI == TRUE){
+    myhospit = myhospit[which(myhospit$is.DEN==TRUE),]
   }
   
   #obtain list of clinical variables to include.
@@ -98,12 +106,24 @@ get_rfVIMs = function(outcome, include_imp_dums, NoOFI){
   colnames(VIM_rf) = c("varname","RF_OOB","RF_Gini")
   #sort -- grr.....values are interpreted as chars not numerics for sorting.  strange.
   VIM_rf = VIM_rf[order(VIM_rf$RF_OOB),]
-  #add proper variable names for displaying in tables/graphs and variable categories
+  
+  ## Add proper variable names for displaying in tables/graphs and variable categories
   #first, modify the usual clinic_varsD to reflect the binary vars that we are now using
   mod_clinic_varsD = clinic_varsD
   mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="Sexo"),"variable.name.in.final.data"]="is.female"
   mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="Pulso"),"variable.name.in.final.data"]="is.pulse_danger"
   mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="Torniquete"),"variable.name.in.final.data"]="is.torniquete20plus"
+  #include 1 row for each value of serotype
+  add1 = mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="PCR"),]
+  add1$CC_name = "Serotype 1"
+  add1$variable.name.in.final.data = "is.serotype1"
+  add2 = mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="PCR"),]
+  add2$CC_name = "Serotype 2"
+  add2$variable.name.in.final.data = "is.serotype2"
+  add3 = mod_clinic_varsD[which(mod_clinic_varsD$variable.name.in.final.data=="PCR"),]
+  add3$CC_name = "Serotype 3"
+  add3$variable.name.in.final.data = "is.serotype3"
+  mod_clinic_varsD = rbind(mod_clinic_varsD, add1, add2, add3)
   VIM_rf_plus = merge.data.frame(mod_clinic_varsD[,c("variable.name.in.final.data","CC_name","CC_category","CC_type",
                                                      "CC_description","in.cohort.data","CC_broadcat_sort", "CC_cat_sort")], 
                                  VIM_rf, by.x="variable.name.in.final.data", by.y="varname", in.y=all)
@@ -116,6 +136,9 @@ get_rfVIMs = function(outcome, include_imp_dums, NoOFI){
 get_rfVIMs(outcome="is.DEN", include_imp_dums="None", NoOFI=FALSE)
 get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="None", NoOFI=TRUE)
 get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="None", NoOFI=FALSE)
+
+## Imputation code needs to be fixed -- problem with adding info from clinic_varsD
+  #since merge is done on variable names without _imputed suffix
 #imputation dummies plus clinical feature values
 get_rfVIMs(outcome="is.DEN", include_imp_dums="all", NoOFI=FALSE)
 get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="all", NoOFI=TRUE)
@@ -125,8 +148,8 @@ get_rfVIMs(outcome="is.DEN", include_imp_dums="Only", NoOFI=FALSE)
 get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="Only", NoOFI=TRUE)
 get_rfVIMs(outcome="is.DHF_DSS", include_imp_dums="Only", NoOFI=FALSE)
 
-#check results
-checkme = read.delim(paste(outputsDir,"VIM_rf_DF.v.DHFDSS.txt", sep=""), header=TRUE, nrows=200)
+#check results - empty dataset
+checkme = read.delim(paste(outputsDir,"VIM_rf_DF.v.DHFDSS_dumsOnly.txt", sep=""), header=TRUE, nrows=200)
 
 
 
