@@ -3,6 +3,7 @@
 ## Process mzML data -- build arrays and graphs (after converting .d files)  ##
 #######  This code is most up-to-date version of binned array building ########
 ###############################################################################
+## Code builds off of the now obsolete process_raw_data_and_do_prediction.py ##
 
 # This line tells python to compile the .pyx code before running
     # to instead compile the .pyx code and not run the whole python script:
@@ -10,11 +11,6 @@
 import pyximport; pyximport.install()
 import my_cython_functions #cython code used in this script
 
-import rpy2 #allows me to call R functions from python
-import rpy2.robjects as robj
-from rpy2.robjects.numpy2ri import numpy2ri #submodules not imported automatically
-#the following import will allow me to import arbitrary R code as a package
-from rpy2.robjects.packages import SignatureTranslatedAnonymousPackage
 import os, sys
 
 import cPickle as pickle
@@ -131,9 +127,8 @@ class LCMSRun():
         print "max mz value: " , max_mz
         print "min rt value: " , min_rt # identical to min_mz value
         print "max rt value: " , max_rt
-        #return 2 tuples (note: tuples are immutable)
         
-        return (min_rt, max_rt), (min_mz, max_mz)
+        return [min_rt, max_rt], [min_mz, max_mz]
 
     def _find_num_data_points(self):
         lcms_run = pymzml.run.Reader(self.filepath)
@@ -169,6 +164,9 @@ class LCMSRun():
                 break 
             
             rt = self.get_rt(ms_scan)
+            #do not use trash values (as told by Kristof)
+            if rt < self.rt_bounds[0] or rt > self.rt_bounds[1]:
+                continue
             for mz, intensity in ms_scan.peaks:
                 try:
                     rt, mz, intensity = float(rt), float(mz), float(intensity)
@@ -188,11 +186,15 @@ class LCMSRun():
 
     # Create a class constructor/initiation method 
     # (This is called when you create a new instance of this class)
-    def __init__(self, filepath):
+    def __init__(self, filepath, rt_bounds=None):
         self.filepath = filepath
         log_statement("Finding mz and rt bounds")
+          
         # can we speed this up by looking through the XML file?
         self.rt_bounds, self.mz_bounds = self._find_mz_rt_bounds()
+        if rt_bounds!=None:
+            self.rt_bounds = rt_bounds        
+
         log_statement("Building 3D array")
         ( self.intensity_3D_full, self.missing_values 
           ) = self._build_3D_full_array()
@@ -357,11 +359,13 @@ def plot_binned_data(intensity_2D_binned,
 
     return
 
-def load_lcms_run(filepath, replace=0):
+def load_lcms_run(filepath, rt_bounds, replace=0):
     """Create or load class lcms_run instance
 
     """
-    pickled_fname = filepath + ".pickled"
+    pickled_dir = os.path.dirname(filepath) + "/pickled_3D_arrays/"
+    pickled_name = os.path.basename(filepath) + ".pickled"
+    pickled_fname = pickled_dir + pickled_name
     # If pickled class instance already exists, then use it
     if replace == False:
         try:
@@ -369,21 +373,20 @@ def load_lcms_run(filepath, replace=0):
         except IOError:
             pass
     
-    my_run = LCMSRun(filepath) 
+    my_run = LCMSRun(filepath, rt_bounds) 
     my_run.save(pickled_fname)
     return my_run
 
 
-def fill_row_of_lcms_matrix(respD, rt_grid_size, mz_grid_size, filecount, filename):
+def fill_row_of_lcms_matrix(respD, IDcode, rt_bounds_limit, 
+                            rt_grid_size, mz_grid_size, 
+                            filecount, filename):
 
     filepath = os.path.abspath(filename)
     start_time = time.time()
-    start_pos = filename.find("Nicaserhilic")
-    IDcode = "ID" + filename[start_pos+12:start_pos+16]
-    print "\n ID: " , IDcode
 
     # Create full 3D data array and get basic stats as part of class attributes
-    my_run = load_lcms_run(filepath, replace=False)
+    my_run = load_lcms_run(filepath, rt_bounds_limit, replace=True)
     checkpt_load = time.time()
     log_statement( "Time to build/load full 3D data array: {} minutes".format(
             (checkpt_load - start_time)/60. ) )  
@@ -399,10 +402,10 @@ def fill_row_of_lcms_matrix(respD, rt_grid_size, mz_grid_size, filecount, filena
    
     # Create binned data arrays with specified range and grid sizes
         # This array will be of dimension rt_grid_size by mz_grid_size
-    rt_start = 0    #rt_start = my_run.rt_bounds[0]
-    rt_end = 45     #rt_end = my_run.rt_bounds[1]
-    mz_start = 100  #mz_start = my_run.mz_bounds[0]
-    mz_end = 1700   #mz_end = my_run.mz_bounds[1]
+    rt_start = my_run.rt_bounds[0]
+    rt_end = my_run.rt_bounds[1]
+    mz_start = my_run.mz_bounds[0]
+    mz_end = my_run.mz_bounds[1]
     intensity_2D_binned = my_run.build_2D_binned_array(None,
         rt_start, rt_end, rt_grid_size, mz_start, mz_end, mz_grid_size)
     checkpt_2Dbin = time.time()
@@ -423,12 +426,32 @@ def fill_row_of_lcms_matrix(respD, rt_grid_size, mz_grid_size, filecount, filena
             cell += 1
     return respD
 
+
+def get_patientID(labtech, filename):
+    """
+        Extract patient code from name of file.
+        Kristof and Natalia used different conventions.
+    """
+    if labtech=="Natalia":
+        start_pos = filename.index("Nicaserhilic")
+        IDcode = "ID" + filename[start_pos+12:start_pos+16]
+    else:
+        begin_name = filename.rfind('/')+1
+        myname = filename[begin_name:] #after riding of file path
+        start_pos = myname.index('_')+1
+        end_pos = myname[start_pos:].index('_')+start_pos
+        IDnum = myname[start_pos:end_pos]
+        IDcode = "ID" + IDnum.rjust(4,'0') #add "ID" and leading zeros
+
+    print "\n" , IDcode
+    return IDcode
+
 ###############################################################################
 
 def parse_arguments():
     """ When running from command prompt, expect filename and output directory
 
-    Ex: python /users/ccotter/git_dengue/process_raw_data_and_do_prediction.py
+    Ex: python /users/ccotter/git_dengue/extract_LCMS_features.py
                /srv/scratch/ccotter/RP_MZML/batch1/*.mzML
                /srv/scratch/ccotter/py_out
     """ 
@@ -439,6 +462,10 @@ def main():
     os.chdir(outdir) #change pwd to output directory
     start_time_overall = time.time()
   
+    labtech = "Kristof" #"Kristof" or "Natalia" - for file naming conventions etc.
+    #Kristof's data contains junk outside of RT values between 1 and 15 minutes
+        #here we can limit analysis to this range of rt values
+    rt_bounds_limit = [60, 900] #options: None, [60, 900] for rt vals (seconds)
     rt_grid_size = 50
     mz_grid_size = 50
     log_statement( "Number of mzml patient files: {}".format(len(filenames)) )
@@ -451,25 +478,17 @@ def main():
 
     #fill the array
     for filecount, filename in enumerate(filenames):
-        if filecount<1000:
-            respD = fill_row_of_lcms_matrix(respD, 
+        if filecount<1000: #adjust for testing
+            patientID = get_patientID(labtech, filename)
+            respD = fill_row_of_lcms_matrix(respD, patientID, rt_bounds_limit,
                     rt_grid_size, mz_grid_size, filecount, filename)
-    print "\n Data to use in R: " , respD[0:5,0:20]
+    print "\n Binned data: " , respD[0:5,0:20]
 
     log_statement("Time till beginning of R section: {} minutes".format(
     (time.time() - start_time_overall)/60. ) )
 
-    #convert numpy array into data.frame recognized by R
-    Rdf = robj.r['data.frame'](numpy2ri(respD))
-    #use this dataframe in R prediction code 
-    myRcode = """
-    doR <- function(python_respD, lcms_run) {
-        source("/srv/scratch/carolyn/Dengue_code/prediction_with_LCMS_from_python.R") 
-        run_predictions_wrap(python_respD, lcms_run)
-    }
-    """
-    Rpack = SignatureTranslatedAnonymousPackage(myRcode, "Rpack")
-    print Rpack.doR(Rdf, lcms_run=2) #to run the function doR, found in Rpack
+    #save numpy array for future use
+    np.save("RPbins50x50", respD) 
     
     log_statement("Total execution time: {} minutes".format(
         (time.time() - start_time_overall)/60. ) ) #40 min to create binned data using pickles
