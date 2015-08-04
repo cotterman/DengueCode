@@ -12,11 +12,14 @@ import pyximport; pyximport.install()
 import my_cython_functions #cython code used in this script
 
 import os, sys
+import re #regular expression
 
 import cPickle as pickle
 
 import pymzml
 import numpy as np
+import scipy as sp
+from scipy import stats
 import math
 
 import matplotlib
@@ -102,7 +105,8 @@ class LCMSRun():
     def _find_mz_rt_bounds(self):
         # find the min and max mz values (across all retention times)
           # and the min and max retention times
-        """
+        #Natalia's LCMS data have these values - no need to recalculate
+        
         min_mz = 0.0438833333333
         max_mz = 1699.52545493
         min_rt = 0.0438833333333
@@ -123,6 +127,7 @@ class LCMSRun():
             if current_rt != None:
                 min_rt = min(min_rt, current_rt)
             max_rt = max(max_rt, current_rt)
+        """
         print "min mz value: " , min_mz
         print "max mz value: " , max_mz
         print "min rt value: " , min_rt # identical to min_mz value
@@ -359,15 +364,15 @@ def plot_binned_data(intensity_2D_binned,
 
     return
 
-def load_lcms_run(filepath, rt_bounds, replace=0):
+def load_lcms_run(filepath, rt_bounds, recreate_pickle=False):
     """Create or load class lcms_run instance
 
     """
     pickled_dir = os.path.dirname(filepath) + "/pickled_3D_arrays/"
     pickled_name = os.path.basename(filepath) + ".pickled"
     pickled_fname = pickled_dir + pickled_name
-    # If pickled class instance already exists, then use it
-    if replace == False:
+    # If pickled class instance already exists, then we can use it
+    if recreate_pickle == False:
         try:
             return load_saved_LCMSRun(pickled_fname)
         except IOError:
@@ -380,13 +385,13 @@ def load_lcms_run(filepath, rt_bounds, replace=0):
 
 def fill_row_of_lcms_matrix(respD, IDcode, rt_bounds_limit, 
                             rt_grid_size, mz_grid_size, 
-                            filecount, filename):
+                            filecount, filename, recreate_pickle):
 
     filepath = os.path.abspath(filename)
     start_time = time.time()
 
     # Create full 3D data array and get basic stats as part of class attributes
-    my_run = load_lcms_run(filepath, rt_bounds_limit, replace=True)
+    my_run = load_lcms_run(filepath, rt_bounds_limit, recreate_pickle)
     checkpt_load = time.time()
     log_statement( "Time to build/load full 3D data array: {} minutes".format(
             (checkpt_load - start_time)/60. ) )  
@@ -432,16 +437,16 @@ def get_patientID(labtech, filename):
         Extract patient code from name of file.
         Kristof and Natalia used different conventions.
     """
+    begin_name = filename.rfind('/')+1
+    myname = filename[begin_name:] #after riding of file path
     if labtech=="Natalia":
-        start_pos = filename.index("Nicaserhilic")
-        IDcode = "ID" + filename[start_pos+12:start_pos+16]
+        IDnum = re.search('\d+', myname).group() #returns first number in myname
     else:
-        begin_name = filename.rfind('/')+1
-        myname = filename[begin_name:] #after riding of file path
         start_pos = myname.index('_')+1
         end_pos = myname[start_pos:].index('_')+start_pos
-        IDnum = myname[start_pos:end_pos]
-        IDcode = "ID" + IDnum.rjust(4,'0') #add "ID" and leading zeros
+        IDnum = myname[start_pos:end_pos].strip() #remove white spaces
+    #IDcode = "ID" + IDnum.rjust(4,'0') #add "ID" and leading zeros
+    IDcode = IDnum #just use numeric component....problem for QCs
 
     print "\n" , IDcode
     return IDcode
@@ -449,46 +454,92 @@ def get_patientID(labtech, filename):
 ###############################################################################
 
 def parse_arguments():
-    """ When running from command prompt, expect filename and output directory
-
+    """ When running from command prompt, expect filename and output directories
+            Can use run_extract_LCMS_features.bash script for running:
+            $ bash run_extract_LCMS_features.bash
     Ex: python /users/ccotter/git_dengue/extract_LCMS_features.py
                /srv/scratch/ccotter/RP_MZML/batch1/*.mzML
                /srv/scratch/ccotter/py_out
     """ 
     return sys.argv[1:-1], os.path.abspath(sys.argv[-1])
 
+
 def main():
+
     filenames, outdir = parse_arguments() #filenames will be a list
     os.chdir(outdir) #change pwd to output directory
     start_time_overall = time.time()
+    log_statement( "Number of mzml patient files: {}".format(len(filenames)) )
   
-    labtech = "Kristof" #"Kristof" or "Natalia" - for file naming conventions etc.
+    ## Parameters to set ##
+    labtech = "Natalia" #"Kristof" or "Natalia" - for diff file naming conventions
     #Kristof's data contains junk outside of RT values between 1 and 15 minutes
         #here we can limit analysis to this range of rt values
-    rt_bounds_limit = [60, 900] #options: None, [60, 900] for rt vals (seconds)
+    rt_bounds_limit = None #options: None, [60, 900] for rt vals (seconds)
     rt_grid_size = 50
     mz_grid_size = 50
-    log_statement( "Number of mzml patient files: {}".format(len(filenames)) )
+    outFname = "NPbins50x50_int" #name of numpy array to create
+    run_extraction = True
+    #most time-intensive part of program involves reading raw data
+        #set recreate_pickle to True if want to re-read in data and build new pickle
+        #False if raw data has already been read and saved as pickle, and you want to use it
+    recreate_pickle = False 
     
-    #build empty np array to be filled with LCMS values for R prediction
-        #dimension will be (# mzml files) by (# rt/mz bins + 1 for patient ID)
-    floatD = np.zeros((len(filenames),rt_grid_size*mz_grid_size), dtype=float) #i vals
-    strD = np.zeros((len(filenames),1), dtype='a6') #a6 is dtype for 6 char str
-    respD = np.hstack((strD, floatD))
+    if run_extraction==True:
 
-    #fill the array
-    for filecount, filename in enumerate(filenames):
-        if filecount<1000: #adjust for testing
-            patientID = get_patientID(labtech, filename)
-            respD = fill_row_of_lcms_matrix(respD, patientID, rt_bounds_limit,
-                    rt_grid_size, mz_grid_size, filecount, filename)
-    print "\n Binned data: " , respD[0:5,0:20]
+        ## Build empty np array to be filled with LCMS values for R prediction
+            #dimension will be (# mzml files) by (# rt/mz bins + 1 for patient ID)
+        floatD = np.zeros((len(filenames),rt_grid_size*mz_grid_size), dtype=float) #i vals
+        strD = np.zeros((len(filenames),1), dtype='a6') #a6 is dtype for 6 char str
+        respD = np.hstack((strD, floatD)) #will end up with numpy of all strings (tofix)
 
-    log_statement("Time till beginning of R section: {} minutes".format(
-    (time.time() - start_time_overall)/60. ) )
+        ## Fill the array
+        for filecount, filename in enumerate(filenames):
+            if filecount<10: #adjust for testing
+                patientID = get_patientID(labtech, filename)
+                respD = fill_row_of_lcms_matrix(respD, patientID, rt_bounds_limit,
+                        rt_grid_size, mz_grid_size, filecount, filename, recreate_pickle)
+        print "\n Binned data: " , respD[0:5,0:20]
 
-    #save numpy array for future use
-    np.save("RPbins50x50", respD) 
+        log_statement("Time end of feature extraction section: {} minutes".format(
+        (time.time() - start_time_overall)/60. ) )
+
+        ## Save numpy array for future use
+        np.save(outFname, respD) 
+
+    ## Add clinical information, create pandas dataframe for use in prediction_in_python.py
+    if run_extraction==False:
+        respD = np.load(outFname+".npy") #load numpy array if not already in memory
+        #basic info on respD
+        respD.shape #367 runs
+        respD_unique = np.unique(respD[:,0])
+        respD_unique.size #185 unique runs
+        stats.itemfreq(respD[:,0]) #nearly all patient data run 3 times; quality controls once
+        patients = []
+        for x in respD_unique:
+            if x.find('Q')==-1:
+                patients.append(x)
+        print len(patients) #92 unique patients (excludes quality controls)
+        
+
+    #read in clinical data
+    inputsDir = "/srv/scratch/ccotter/intermediate_data/"
+    inputData = "clin12_full_wImputedRF1.txt" 
+    df_prelim = pd.read_csv(inputsDir + inputData, sep='\t', 
+        true_values=["True","Yes","TRUE"], false_values=["False","No","FALSE"], 
+        na_values=['NaN','NA'])
+    #note: batch 1 LCMS data is from only hospital patients  
+    df = df_prelim[df_prelim.Study=="Hospital"] #limit to only hospital patients  
+    
+    #find overlap and mismatches between patients in DF and in LCMS
+    pdf = set(df['code'])
+    myinter = pdf.intersection(set(patients))
+    len(myinter) #89 
+    set(patients)-myinter #the 3 patients in LCMS but not in clinical hosptial data
+        #maybe something funky with labeling of patient 341 (0341)
+        #other 2 ('ID2578', 'ID3186') are found in cohort data (is this them?) 
+    #respD.to_pickle(clin12wImpRF1_RPbins50x50)
+
     
     log_statement("Total execution time: {} minutes".format(
         (time.time() - start_time_overall)/60. ) ) #40 min to create binned data using pickles

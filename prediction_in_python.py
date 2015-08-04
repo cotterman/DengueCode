@@ -60,6 +60,7 @@ np.random.seed(100)
 #inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
 #outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
 inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
+clinDir = "/srv/scratch/ccotter/lab_and_clinical_data/Cleaned/" #mitra and nandi
 outDir = "/users/ccotter/python_out/" #mitra and nandi
 
 VERBOSE = True
@@ -964,6 +965,7 @@ def main():
         run_MainAnalysis = False  # if false, will expect to get results from file
         plot_MainAnalysis = False  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
+        #determine which variable importance code to run
         run_VIM = True  # if false, none of the VIM code will be run
         forget_VIM1 = True # if true, will do VIM analysis and graphs without VIM1 output
         run_VIM1 = False # if false, will expect to obtain VIM1 (multivariate) results from file
@@ -981,27 +983,33 @@ def main():
         NoInitialDHF = True #only applies to is.DHF_DSS analyses (should generally select True)
 
         ## Choose patient sample ##
-        #patient_sample = "all" 
+        patient_sample = "all" 
         #patient_sample = "cohort_only"
-        patient_sample = "hospital_only"
+        #patient_sample = "hospital_only"
 
         ## Choose sample to treat as independent test set (if run_testdata=True) ##
-        testSample = "hospital" #options: "cohort" or "hospital
+        testSample = "hospital" #options: "cohort" or "hospital"
+
+        ## Choose whether to include clinical variables and/or LCMS features ##
+        include_clinvars = True #true to include clinical variables
+        include_LCMSvars = True #true to include LCMS features
         
-        ## Choose list of variables to use in prediction ##
+        ## Choose list of clinical variables to use in prediction 
+            #applicable if include_clinvars==True (else will be ignored)
         predictor_desc = "covarlist_all"
         #predictor_desc = "covarlist_noUltraX"
         #predictor_desc = "covarlist_CohortRestrict"
         #predictor_desc = "covarlist_genOnly"
         #predictor_desc = "covarlist_custom"  #one-off analysis
 
-        ## Choose whether to include  ##
+        ## Choose whether to include various indicators ##
         include_study_dum = False #true to include is.cohort indicator 
-        include_imp_dums = True #true to add imputation dummies to covariate list
-        imp_dums_only = True #true to run with imputation dummies and no other variable values
+        include_imp_dums = False #true to add imputation dummies to covariate list
+        imp_dums_only = False #true to run with imputation dummies and no other variable values
 
-        ## Choose input data (this data was prepared in R) ##
-        inputData = "clin12_full_wImputedRF1.txt"
+        ## Choose input data ##
+        inputData = "clin12_full_wImputedRF1.txt" #data prepared in R
+        inputData = "clin12wImpRF1_RPbins50x50" #prepared in extract_LCMS_features.py
         
         ## Use a tiny SL library for testing purposes
         testlib = False #false if you want to run normally
@@ -1009,6 +1017,9 @@ def main():
     ## Choose variable screening method (if any) ##
     screenType = None #current options: None, "univariate", "L1"
     screenNum = 5 #applies when screenType != None; else will be ignored
+    #choose True to include clinical covariates when selecting best LCMS features
+        #only applies when screenType!=None, include_clinvars=T and include_LCMSvars=T
+    screenCovars = True  
 
     ## Choose whether to standardize predictors (will not apply to imputation dummies)
     std_vars = True 
