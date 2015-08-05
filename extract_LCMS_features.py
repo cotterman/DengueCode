@@ -19,6 +19,7 @@ import cPickle as pickle
 import pymzml
 import numpy as np
 import scipy as sp
+import pandas as pd
 from scipy import stats
 import math
 
@@ -100,7 +101,7 @@ class LCMSRun():
         plt.xlabel("MZ value")
         plt.ylabel("Intensity")
         plt.title("MZ vs. Intensity for one retention time value")
-        plt.savefig(outdir+'plot_mz_vs_intensity.png') 
+        plt.savefig(outDir+'plot_mz_vs_intensity.png') 
     
     def _find_mz_rt_bounds(self):
         # find the min and max mz values (across all retention times)
@@ -451,6 +452,79 @@ def get_patientID(labtech, filename):
     print "\n" , IDcode
     return IDcode
 
+
+def prepare_for_merge_with_clinical(respD, clinDir, outFname, labtech):
+    """
+        Create pandas dataframe containing LCMS intensity info
+        Add additional info (Study) for proper merging with clinical data
+        Eliminate observations as appropriate
+    """
+    # each dataset has its own quirks that need to be dealt with seperately
+    if labtech == "Kristof":
+        #read in Kristof data and convert to pandas dataframe
+        respD = np.load(outFname+".npy") #load numpy array if not already in memory
+        #drop QCs and keep only 1 obs per patient (arbitrary for now)
+        uniID, uniIndices = np.unique(respD[:,0], return_index=True) #indices of unique runs
+        unipID = [] #list of unique (non-QC) patients
+        unipIndices = [] #list of indices of unique (non-QC) patients
+        for counter, ID in enumerate(uniID):
+            #before adding strip() to extract_LCMS_features.py we got ID341 and ID0341
+                #eliminate ID341 since ID0341 is already in list
+            if ID.find('Q')==-1 and ID!='ID341 ':
+                unipID.append(ID)
+                unipIndices.append(uniIndices[counter])
+        respD_unip = respD[unipIndices,] #now take rows corresponding to unipIndices
+        respD_unip.shape #91 by 2501, just as we want
+        index = respD_unip[:,0]
+        MZcount = respD_unip.shape[1] #we have 1 fewer MZ values than this (1st column = patient ID)
+        colnames = ["MZ_"+ str(x) for x in range(1,MZcount)] 
+        vals = respD_unip[:,1:].astype(float)
+        RPdf = pd.DataFrame.from_records(vals, index=index, columns=colnames)
+        RPdf.shape #91 x 2500
+        #add cohort/hospital indicator
+        #Kristof's batch 1 data contains some cohort samples 
+            #use info I've gathered (added to .csv file) on Study to make merge
+        sampleMap = pd.read_csv(clinDir + "RP_batch1_sample_merge_info.csv", sep=',')
+        #get patient ID and sample code to be compatible with other data
+        sampleMap = sampleMap.assign(code = sampleMap['Code'].astype(str))
+        sampleMap.code = "ID" + sampleMap.code.str.rjust(4,'0') #91 patients
+        sampleMap = sampleMap.assign(Cod_Nin = sampleMap['Sample'].str.lower())
+        #replace Cod_Nin with missings for hospital obs since clinical hospital data lacks them
+            #will have merge problems later if not set to missing in both datasets
+        sampleMap.loc[sampleMap.Study=="Hospital","Cod_Nin"] = np.nan
+        #merge sampleMap with LCMS on code
+        RPdf_wmap = pd.merge(RPdf, sampleMap, left_index = True, right_on="code") #91 rows
+        myinter = set(sampleMap.code).intersection(set(unipID))
+        set(unipID) - myinter #should be empty
+        df_ready = RPdf_wmap
+    else:
+        #read in Natalia batch 1 data and convert to pandas dataframe
+        respD2 = np.load(outFname+".npy")
+        respD2.shape #91 runs 
+        uniID, uniIndices = np.unique(respD2[:,0], return_index=True) #indices of unique runs
+        unipID = [] #list of unique (non-QC) patients
+        unipIndices = [] #list of indices of unique (non-QC) patients
+        for counter, ID in enumerate(uniID):
+            #Natalia says "I had to drop the files 86 and 1208 because 
+            #in my chromatography image seemed to have high abundances of PEG contamination"
+            if ID.find('Q')==-1 and ID!='ID0086' and ID!='ID1208':
+                unipID.append(ID)
+                unipIndices.append(uniIndices[counter])
+        respD_unip = respD2[unipIndices,] #now take rows corresponding to unipIndices
+        respD_unip.shape #88 by 2501, just as we expected
+        index = respD_unip[:,0]
+        MZcount = respD_unip.shape[1] #we have 1 fewer MZ values than this (1st column = patient ID)
+        colnames = ["MZ_"+ str(x) for x in range(1,MZcount)] 
+        vals = respD_unip[:,1:].astype(float)
+        NPdf = pd.DataFrame.from_records(vals, index=index, columns=colnames)
+        #Natalia's batch 1 data is all from hospital - assign Study="Hospital"
+        NPdf.insert(0, 'Study','Hospital')
+        NPdf.insert(0, 'code', NPdf.index)
+        NPdf.insert(2, 'Cod_Nin', np.nan) #need Cod_Nin since it will be expected later on
+        df_ready = NPdf
+    return df_ready
+
+
 ###############################################################################
 
 def parse_arguments():
@@ -466,8 +540,9 @@ def parse_arguments():
 
 def main():
 
-    filenames, outdir = parse_arguments() #filenames will be a list
-    os.chdir(outdir) #change pwd to output directory
+    filenames, outDir = parse_arguments() #filenames will be a list
+    os.chdir(outDir) #change pwd to output directory
+    clinDir = "/srv/scratch/ccotter/lab_and_clinical_data/Cleaned/" #mitra and nandi
     start_time_overall = time.time()
     log_statement( "Number of mzml patient files: {}".format(len(filenames)) )
   
@@ -478,8 +553,8 @@ def main():
     rt_bounds_limit = None #options: None, [60, 900] for rt vals (seconds)
     rt_grid_size = 50
     mz_grid_size = 50
-    outFname = "NPbins50x50_int" #name of numpy array to create
-    run_extraction = True
+    outFname = "NPbins50x50" #name of numpy array to create
+    run_extraction = False
     #most time-intensive part of program involves reading raw data
         #set recreate_pickle to True if want to re-read in data and build new pickle
         #False if raw data has already been read and saved as pickle, and you want to use it
@@ -495,7 +570,7 @@ def main():
 
         ## Fill the array
         for filecount, filename in enumerate(filenames):
-            if filecount<10: #adjust for testing
+            if filecount<1000: #adjust for testing
                 patientID = get_patientID(labtech, filename)
                 respD = fill_row_of_lcms_matrix(respD, patientID, rt_bounds_limit,
                         rt_grid_size, mz_grid_size, filecount, filename, recreate_pickle)
@@ -507,40 +582,18 @@ def main():
         ## Save numpy array for future use
         np.save(outFname, respD) 
 
-    ## Add clinical information, create pandas dataframe for use in prediction_in_python.py
+
+    ## Create pandas dataframe for use in prediction_in_python.py ##
+
+    # load numpy array if not already in memory
     if run_extraction==False:
-        respD = np.load(outFname+".npy") #load numpy array if not already in memory
-        #basic info on respD
-        respD.shape #367 runs
-        respD_unique = np.unique(respD[:,0])
-        respD_unique.size #185 unique runs
-        stats.itemfreq(respD[:,0]) #nearly all patient data run 3 times; quality controls once
-        patients = []
-        for x in respD_unique:
-            if x.find('Q')==-1:
-                patients.append(x)
-        print len(patients) #92 unique patients (excludes quality controls)
-        
+        respD = np.load(outFname+".npy")         
+    # prepare data so it will properly merge with clinical data on code, Study, Cod_Nin
+    respDF = prepare_for_merge_with_clinical(respD, clinDir, outFname, labtech)
+    # save for later use (employ pd.read_pickle() to load)
+    respDF.to_pickle(outFname + '_toMerge') 
 
-    #read in clinical data
-    inputsDir = "/srv/scratch/ccotter/intermediate_data/"
-    inputData = "clin12_full_wImputedRF1.txt" 
-    df_prelim = pd.read_csv(inputsDir + inputData, sep='\t', 
-        true_values=["True","Yes","TRUE"], false_values=["False","No","FALSE"], 
-        na_values=['NaN','NA'])
-    #note: batch 1 LCMS data is from only hospital patients  
-    df = df_prelim[df_prelim.Study=="Hospital"] #limit to only hospital patients  
-    
-    #find overlap and mismatches between patients in DF and in LCMS
-    pdf = set(df['code'])
-    myinter = pdf.intersection(set(patients))
-    len(myinter) #89 
-    set(patients)-myinter #the 3 patients in LCMS but not in clinical hosptial data
-        #maybe something funky with labeling of patient 341 (0341)
-        #other 2 ('ID2578', 'ID3186') are found in cohort data (is this them?) 
-    #respD.to_pickle(clin12wImpRF1_RPbins50x50)
 
-    
     log_statement("Total execution time: {} minutes".format(
         (time.time() - start_time_overall)/60. ) ) #40 min to create binned data using pickles
 
