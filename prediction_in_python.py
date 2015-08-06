@@ -461,7 +461,7 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
     print "Number of vars: " , p
 
     #set parameters for GridSearchCV
-    n_jobs = 5
+    n_jobs = 2
     cv_grid = 5
 
     mean = dummy.DummyClassifier(strategy='most_frequent') #predict most frequent class
@@ -1014,11 +1014,11 @@ def main():
         only_VIM2 = True # true if just want to plot VIM2 (and not other VIMs)
 
         ## Choose outcome variable ##
-        outcome = "is.DEN"  
-        #outcome = "is.DHF_DSS"
+        #outcome = "is.DEN"  
+        outcome = "is.DHF_DSS"
 
         ## Choose whether to exclude OFI patients ##
-        NoOFI = True #only applies to is.DHF_DSS analyses
+        NoOFI = False #only applies to is.DHF_DSS analyses
 
         ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
         NoInitialDHF = True #only applies to is.DHF_DSS analyses (should generally select True)
