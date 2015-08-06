@@ -212,22 +212,23 @@ def main():
     ## Bar plot with bars grouped by predictor set and colors indicating LCMS run ##
     if create_LCMS_barplot==True:
         # LCMS data to loop through
-        inLCMSdata_list = ['NPbins50x50', 'RPbins50x50']
+        inLCMSData_list = ['NPbins50x50', 'RPbins50x50']
         # labels to appear in graph legend
-        inLCMSdata_desc = ['Normal phase, 50x50 intensity grid',
+        inLCMSData_desc = ['Normal phase, 50x50 intensity grid',
                            'Reverse phase, 50x50 intensity grid']  
         figName = FileNamePrefix + '_LCMScompare.txt'
         predcat_names = ['Clinical only','LCMS only','Clinical+LCMS']
         predictor_desc = "covarlist_all"
         initial_pos = np.arange(len(predcat_names))*(
-            len(inLCMSdata_list)+1)+len(inLCMSdata_list)+1
+            len(inLCMSData_list)+1)+len(inLCMSData_list)+1
         bar_width = 1
         colors = ["tangerine","light burgundy"]
         mycolors = sns.xkcd_palette(colors)
-        plt.figure(figsize=(4,4))
-        #cycle through each inLCMSdata value
+        #plt.figure(figsize=(4,6))
+        #cycle through each inLCMSData value
         plots = []
-        for counter, inLCMSdata in enumerate(inLCMSdata_list):
+        for counter, inLCMSData in enumerate(inLCMSData_list):
+            resultsDF = pd.DataFrame()
             for myc, predcat in enumerate(predcat_names):            
                 if predcat=='Clinical only':
                     tableName = FileNamePrefix + '_' + predictor_desc + '_'+inLCMSData+'patients'
@@ -235,7 +236,38 @@ def main():
                     tableName = FileNamePrefix + '_covarlist_' + inLCMSData
                 elif predcat=='Clinical+LCMS':
                     tableName = FileNamePrefix + '_' + predictor_desc + '_' + inLCMSData
-                resultsDF = pd.read_csv(outDir + 'R_' + tableName + '.txt', sep=",")
+                rDF = pd.read_csv(outDir + 'R_' + tableName + '.txt', sep=",")
+                toAdd = rDF[rDF['Unnamed: 0']=='Random Forests']
+                resultsDF = pd.concat([resultsDF, toAdd]) #add row
+            measurements = np.array(resultsDF['cvAUC'])
+            z = stats.norm.ppf(.95)
+            SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
+                   ( np.array(resultsDF['ci_up']) - np.array(resultsDF['cvAUC']) )/z ]
+            pos = initial_pos - counter 
+            print "measurements: " , measurements
+            print "pos: " , pos
+            plot = plt.barh(bottom=pos, width=measurements, height=bar_width,
+                            xerr=SEs, error_kw=dict(ecolor='.1', lw=1, capsize=1, capthick=1),
+                            align='center', alpha=1, 
+                            color=mycolors[counter], label=inLCMSData_desc[counter])
+            #add numeric values to plot
+            for myc, predcat in enumerate(predcat_names):
+                xpos = measurements[myc]-.05
+                ypos = pos[myc]
+                mytext = "{:.2f}".format(measurements[myc])
+                plt.text(xpos, ypos, mytext, color="white")
+            plots.append(plot)
+        plt.xlabel = "cvAUC"
+        plt.xlim(.5, 1)
+        plt.ylim(0,max(initial_pos)+2)
+        print "counter: " , counter
+        plt.yticks(initial_pos - counter/2 - .5, predcat_names)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(outDir + figName + '.eps', dpi=1200)
+        plt.close()    
+
+
     ## Bar plot with bars grouped by algorithm and colors indicating patient sample ##
     if create_testData_barplot==True:
         # patient samples to loop through
