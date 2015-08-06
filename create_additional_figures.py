@@ -87,7 +87,8 @@ def main():
     ## Choose which plots to create ##
     create_predSets_barplot = False
     create_impDum_barplot = False
-    create_testData_barplot = True 
+    create_testData_barplot = False 
+    create_LCMS_barplot = True
 
     ## Choose outcome variable ##
     outcome = "is.DEN"  
@@ -206,8 +207,35 @@ def main():
         plt.legend(prop={'size':8})
         plt.tight_layout()
         plt.savefig(outDir + figName + '.eps', dpi=1200)
-        plt.close()     
-        
+        plt.close()    
+
+    ## Bar plot with bars grouped by predictor set and colors indicating LCMS run ##
+    if create_LCMS_barplot==True:
+        # LCMS data to loop through
+        inLCMSdata_list = ['NPbins50x50', 'RPbins50x50']
+        # labels to appear in graph legend
+        inLCMSdata_desc = ['Normal phase, 50x50 intensity grid',
+                           'Reverse phase, 50x50 intensity grid']  
+        figName = FileNamePrefix + '_LCMScompare.txt'
+        predcat_names = ['Clinical only','LCMS only','Clinical+LCMS']
+        predictor_desc = "covarlist_all"
+        initial_pos = np.arange(len(predcat_names))*(
+            len(inLCMSdata_list)+1)+len(inLCMSdata_list)+1
+        bar_width = 1
+        colors = ["tangerine","light burgundy"]
+        mycolors = sns.xkcd_palette(colors)
+        plt.figure(figsize=(4,4))
+        #cycle through each inLCMSdata value
+        plots = []
+        for counter, inLCMSdata in enumerate(inLCMSdata_list):
+            for myc, predcat in enumerate(predcat_names):            
+                if predcat=='Clinical only':
+                    tableName = FileNamePrefix + '_' + predictor_desc + '_'+inLCMSData+'patients'
+                elif predcat=='LCMS only':
+                    tableName = FileNamePrefix + '_covarlist_' + inLCMSData
+                elif predcat=='Clinical+LCMS':
+                    tableName = FileNamePrefix + '_' + predictor_desc + '_' + inLCMSData
+                resultsDF = pd.read_csv(outDir + 'R_' + tableName + '.txt', sep=",")
     ## Bar plot with bars grouped by algorithm and colors indicating patient sample ##
     if create_testData_barplot==True:
         # patient samples to loop through

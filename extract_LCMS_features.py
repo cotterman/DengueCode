@@ -580,18 +580,18 @@ def main():
         (time.time() - start_time_overall)/60. ) )
 
         ## Save numpy array for future use
-        np.save(outFname, respD) 
+        np.save(outFname+"_prelim", respD) 
 
 
     ## Create pandas dataframe for use in prediction_in_python.py ##
 
     # load numpy array if not already in memory
     if run_extraction==False:
-        respD = np.load(outFname+".npy")         
+        respD = np.load(outFname+"_prelim.npy")         
     # prepare data so it will properly merge with clinical data on code, Study, Cod_Nin
     respDF = prepare_for_merge_with_clinical(respD, clinDir, outFname, labtech)
     # save for later use (employ pd.read_pickle() to load)
-    respDF.to_pickle(outFname + '_toMerge') 
+    respDF.to_pickle(outFname) 
 
 
     log_statement("Total execution time: {} minutes".format(
