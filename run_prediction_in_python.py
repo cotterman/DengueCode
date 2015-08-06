@@ -36,7 +36,7 @@ for outcome in ['is.DHF_DSS']:
                     imp_dums_only_list = ['']
                 imp_dums_only = ''
 
-                for include_clinvars in ['','--include_clinvars']:
+                for include_LCMSvars in ['','--include_LCMSvars']:
                 #for imp_dums_only in imp_dums_only_list:
 
                     #string args together
