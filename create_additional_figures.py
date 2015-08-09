@@ -85,19 +85,20 @@ def get_colors():
 def main():
 
     ## Choose which plots to create ##
-    create_predSets_barplot = False
+    create_predSets_barplot = True
     create_impDum_barplot = False
-    create_testData_barplot = True 
+    create_testData_barplot = False 
+    create_LCMS_barplot = False
 
     ## Choose outcome variable ##
     outcome = "is.DEN"  
     #outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients ##
-    NoOFI = True
+    NoOFI = False #only applicable for is.DHF_DSS
 
     ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
-    NoInitialDHF = True 
+    NoInitialDHF = True #only applicable for is.DHF_DSS
 
     if outcome=="is.DEN":
         comparison_groups = "OFI vs. DENV using " #will appear in graph title
@@ -119,6 +120,12 @@ def main():
 
     ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors sets ##
     if create_predSets_barplot==True:
+      
+        sns.set_style("whitegrid") #necessary for getting back graph frame
+        mpl.rcParams['lines.color'] = 'white'
+        mpl.rcParams['text.color'] = 'white'
+        fig, ax = plt.subplots()
+
         #combine results across these predictor sets
         predictor_desc_list = ["covarlist_all", "covarlist_noUltraX",
                             "covarlist_CohortRestrict","covarlist_genOnly"]
@@ -127,18 +134,24 @@ def main():
         tableName = FileNamePrefix + '_' + "covarlist_all" + '_' + patient_sample + '.txt'
         resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
         alg_names = resultsDF['Unnamed: 0'] #algorithm names
+        #alg_names = ['Super Learner'] #for shortened graph (JSM poster)
         #could consider linspace instead of np.arange
         initial_pos = np.arange(len(alg_names))*(
             len(predictor_desc_list)+.5)+len(predictor_desc_list)+.5
         bar_width = 1
-        mycolors = sns.cubehelix_palette(4, reverse=True) #rot=-.4 option is also pretty
-        plt.figure(figsize=(6.7,8))
+        mycolors = sns.cubehelix_palette(4, reverse=True, dark=.3, rot=-.4) #rot=-.4 option is also pretty
+        #mycolors = sns.cubehelix_palette(4, start=3, dark=.2, reverse=True) #JSM poster
+        plt.figure(figsize=(6,7)) #dissertation: (6.7,8), poster: (6,7) and (6,2)
+        plt.grid(b=True, which='both', axis='both',color='0.3',linestyle='-')
+        
         #cycle through each predictor list
         plots = []
         for counter, predictor_desc in enumerate(predictor_desc_list):
             tableName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + '.txt'
             print "tableName: " , tableName
             resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
+            #rDF = pd.read_csv(outDir + 'R_' + tableName, sep=",") #JSM poster
+            #resultsDF = rDF[rDF['Unnamed: 0'].isin(['Super Learner'])] #JSM poster
             measurements = np.array(resultsDF['cvAUC'])
             z = stats.norm.ppf(.95)
             SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
@@ -147,18 +160,23 @@ def main():
             print "measurements: " , measurements
             print "alg_pos: " , alg_pos
             plot = plt.barh(bottom=alg_pos, width=measurements, height=bar_width,
-                            xerr=SEs, error_kw=dict(ecolor='.1', lw=1, capsize=1.5, capthick=1),
+                            xerr=SEs, error_kw=dict(ecolor='1', lw=1, capsize=1.5, capthick=1),
                             align='center', alpha=1, 
                             color=mycolors[counter], label=pred_label_list[counter])
             plots.append(plot)
-        plt.xlabel = "cvAUC"
+        plt.xlabel("cvAUC",color='white')
         plt.xlim(.5, 1)
         plt.ylim(0,max(initial_pos)+1) 
         print "counter: " , counter
-        plt.yticks(initial_pos - counter/2, alg_names)
-        plt.legend(title="Clinical Variables")
+        plt.yticks(initial_pos - counter/2, alg_names, color='white')
+        #plt.yticks(np.arange(len(predictor_desc_list))+1, pred_label_list, color='white') #JSM poster
+        plt.xticks(color='white')
+        leg = plt.legend(title="Clinical Variables")
+        for text in leg.get_texts():
+            plt.setp(text, color='white')
+        plt.title('Performance for distinguishing OFI from dengue')
         plt.tight_layout()
-        plt.savefig(outDir + figName + '.eps', dpi=1200)
+        plt.savefig(outDir + figName + '.png', dpi=1200, transparent=True) #transparent=True for ppt
         plt.close()     
 
     ## Bar plot with bars grouped by algorithm and colors indicating imputation dummy inclusion ##  
@@ -206,8 +224,68 @@ def main():
         plt.legend(prop={'size':8})
         plt.tight_layout()
         plt.savefig(outDir + figName + '.eps', dpi=1200)
-        plt.close()     
-        
+        plt.close()    
+
+    ## Bar plot with bars grouped by predictor set and colors indicating LCMS run (RP/NP) ##
+    if create_LCMS_barplot==True:
+        # LCMS data to loop through
+        inLCMSData_list = ['NPbins50x50', 'RPbins50x50']
+        # labels to appear in graph legend
+        inLCMSData_desc = ['Normal phase, 50x50 intensity grid',
+                           'Reverse phase, 50x50 intensity grid']  
+        figName = FileNamePrefix + '_LCMScompare'
+        predcat_names = ['Clinical only','LCMS only','Clinical+LCMS']
+        predictor_desc = "covarlist_all"
+        initial_pos = np.arange(len(predcat_names))*(
+            len(inLCMSData_list)+1)+len(inLCMSData_list)+1
+        bar_width = 1
+        colors = ["tangerine","light burgundy"]
+        mycolors = sns.xkcd_palette(colors)
+        #plt.figure(figsize=(4,6))
+        #cycle through each inLCMSData value
+        plots = []
+        for counter, inLCMSData in enumerate(inLCMSData_list):
+            resultsDF = pd.DataFrame()
+            for myc, predcat in enumerate(predcat_names):            
+                if predcat=='Clinical only':
+                    tableName = FileNamePrefix + '_' + predictor_desc + '_'+inLCMSData+'patients'
+                elif predcat=='LCMS only':
+                    tableName = FileNamePrefix + '_covarlist_' + inLCMSData
+                elif predcat=='Clinical+LCMS':
+                    tableName = FileNamePrefix + '_' + predictor_desc + '_' + inLCMSData
+                rDF = pd.read_csv(outDir + 'R_' + tableName + '.txt', sep=",")
+                alg_list = ['Gradient Boost','AdaBoost','Random Forests']
+                resultsDF = rDF[rDF['Unnamed: 0'].isin(alg_list)]
+            measurements = np.array(resultsDF['cvAUC'])
+            xpositions = np.array(resultsDF['ci_low'])
+            z = stats.norm.ppf(.95)
+            SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
+                   ( np.array(resultsDF['ci_up']) - np.array(resultsDF['cvAUC']) )/z ]
+            ypositions = initial_pos - (counter*len(alg_list)) 
+            print "measurements: " , measurements
+            print "pos: " , ypositions
+            plot = plt.barh(bottom=ypositions, width=measurements, height=bar_width,
+                            xerr=SEs, error_kw=dict(ecolor='.1', lw=1, capsize=1, capthick=1),
+                            align='center', alpha=1, 
+                            color=mycolors[counter], label=inLCMSData_desc[counter])
+            #add numeric values to plot
+            for myc, predcat in enumerate(predcat_names):
+                xpos = xpositions[myc]-.02
+                ypos = ypositions[myc]
+                mytext = "{:.2f}".format(measurements[myc])
+                plt.text(xpos, ypos, mytext, color="white")
+            plots.append(plot)
+        plt.xlabel = "cvAUC"
+        plt.xlim(.5, 1)
+        plt.ylim(0,max(initial_pos)+2)
+        print "counter: " , counter
+        plt.yticks(initial_pos - counter/2 - .5, predcat_names)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(outDir + figName + '.eps', dpi=1200)
+        plt.close()    
+
+
     ## Bar plot with bars grouped by algorithm and colors indicating patient sample ##
     if create_testData_barplot==True:
         # patient samples to loop through

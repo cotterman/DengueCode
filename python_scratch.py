@@ -55,12 +55,176 @@ np.random.seed(100)
 #inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
 #outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
 #inputsDir = "/home/nboley/Desktop/dengue_data_and_results_local/intermediate_data/" #home PC diff login
-inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra
-outDir = "/srv/scratch/ccotter/python_out/" #mitra
+inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
+outDir = "/srv/scratch/ccotter/python_out/" #mitra and nandi
+clinDir = "/srv/scratch/ccotter/lab_and_clinical_data/Cleaned/" #mitra and nandi
+boutDir = "/srv/scratch/ccotter/py_out/"
 
 
 ###############################################################################
-#################### Experiment with reading in data  #########################
+################# Combine LCMS binned data with clinical data  ################
+###############################################################################
+
+#read in clinical data
+inputData = "clin12_full_wImputedRF1.txt" 
+df_prelim = pd.read_csv(inputsDir + inputData, sep='\t', 
+    true_values=["True","Yes","TRUE"], false_values=["False","No","FALSE"], 
+    na_values=['NaN','NA'])
+
+#read in Kristof data and convert to pandas dataframe
+respD = np.load(boutDir+"RPbins50x50"+".npy") #load numpy array if not already in memory
+#drop QCs and keep only 1 obs per patient (arbitrary for now)
+uniID, uniIndices = np.unique(respD[:,0], return_index=True) #indices of unique runs
+unipID = [] #list of unique (non-QC) patients
+unipIndices = [] #list of indices of unique (non-QC) patients
+for counter, ID in enumerate(uniID):
+    #before adding strip() to extract_LCMS_features.py we got ID341 and ID0341
+        #eliminate ID341 since ID0341 is already in list
+    if ID.find('Q')==-1 and ID!='ID341 ':
+        unipID.append(ID)
+        unipIndices.append(uniIndices[counter])
+#print unipID
+#print unipIndices
+respD_unip = respD[unipIndices,] #now take rows corresponding to unipIndices
+respD_unip.shape #91 by 2501, just as we want
+index = respD_unip[:,0]
+MZcount = respD_unip.shape[1] #we have 1 fewer MZ values than this (1st column = patient ID)
+colnames = ["MZ_"+ str(x) for x in range(1,MZcount)] 
+vals = respD_unip[:,1:].astype(float)
+RPdf = pd.DataFrame.from_records(vals, index=index, columns=colnames)
+RPdf.shape #91 x 2500
+
+#add cohort/hospital indicator
+#Kristof's batch 1 data contains some cohort samples 
+    #use info I've gathered (from code below) on Study to make merge
+sampleMap = pd.read_csv(clinDir + "RP_batch1_sample_merge_info.csv", sep=',')
+#get patient ID and sample code to be compatible with other data
+sampleMap = sampleMap.assign(code = sampleMap['Code'].astype(str))
+sampleMap.code = "ID" + sampleMap.code.str.rjust(4,'0') #91 patients
+sampleMap = sampleMap.assign(Cod_Nin = sampleMap['Sample'].str.lower())
+#replace Cod_Nin with missings for hospital obs since clinical hospital data lacks them
+    #will have merge problems later if not set to missing in both datasets
+sampleMap.loc[sampleMap.Study=="Hospital","Cod_Nin"] = np.nan
+#merge sampleMap with LCMS on code
+RPdf_wmap = pd.merge(RPdf, sampleMap, left_index = True, right_on="code") #91 rows
+myinter = set(sampleMap.code).intersection(set(unipID))
+set(unipID) - myinter #should be empty
+
+#now merge with clinical data using code and Study values
+RPandClin = pd.merge(RPdf_wmap, df_prelim, on=('code','Study','Cod_Nin'))
+RPandClin.shape #91 obs.  good.
+
+
+#read in Natalia batch 1 data and convert to pandas dataframe
+respD2 = np.load(boutDir+"NPbins50x50"+".npy")
+respD2.shape #91 runs 
+uniID, uniIndices = np.unique(respD2[:,0], return_index=True) #indices of unique runs
+unipID = [] #list of unique (non-QC) patients
+unipIndices = [] #list of indices of unique (non-QC) patients
+for counter, ID in enumerate(uniID):
+    #Natalia says "I had to drop the files 86 and 1208 because 
+    #in my chromatography image seemed to have high abundances of PEG contamination"
+    if ID.find('Q')==-1 and ID!='ID0086' and ID!='ID1208':
+        unipID.append(ID)
+        unipIndices.append(uniIndices[counter])
+print unipID
+print unipIndices
+respD_unip = respD2[unipIndices,] #now take rows corresponding to unipIndices
+respD_unip.shape #88 by 2501, just as we expected
+index = respD_unip[:,0]
+MZcount = respD_unip.shape[1] #we have 1 fewer MZ values than this (1st column = patient ID)
+colnames = ["MZ_"+ str(x) for x in range(1,MZcount)] 
+NPdf = pd.DataFrame.from_records(respD_unip[:,1:], index=index, columns=colnames)
+#Natalia's batch 1 data is all from hospital - assign Study="Hospital"
+NPdf.insert(0, 'Study','Hospital')
+NPdf.insert(0, 'code', NPdf.index)
+NPdf.insert(2, 'Cod_Nin', np.nan) #need Cod_Nin since it will be expected later on
+
+#merge LCMS with df_prelim on "code" and "Study"
+NPandClin = pd.merge(NPdf, df_prelim, on=('code','Study','Cod_Nin'))
+NPandClin.shape #88 obs.  good.
+
+
+###############################################################################
+######## Figure out mapping btwn samples from Kristof and clin data  ##########
+###############################################################################
+
+
+#read in clinical data
+inputData = "clin12_full_wImputedRF1.txt" 
+df_prelim = pd.read_csv(inputsDir + inputData, sep='\t', 
+    true_values=["True","Yes","TRUE"], false_values=["False","No","FALSE"], 
+    na_values=['NaN','NA'])
+
+#add sample info to LCMS data 
+sampleMap = pd.read_csv(clinDir + "RP_batch1_sample_merge_info.csv", sep=',')
+#get patient ID and sample code to be compatible with other data
+sampleMap = sampleMap.assign(code = sampleMap['Code'].astype(str))
+sampleMap.code = "ID" + sampleMap.code.str.rjust(4,'0') 
+sampleMap = sampleMap.assign(Cod_Nin = sampleMap['Sample'].str.lower())
+#observe what we have
+sampleMap.groupby('type').size()
+
+#batch_1_repeat should match to hospital obs
+sm_hospit = sampleMap[sampleMap.type=='batch_1_repeat']
+sm_hospit.shape #75 
+b1 = df_prelim[df_prelim.serum==1] #Natalia did not have good data for codes 28 and 86 
+b1_match = pd.merge(sm_hospit, b1, on="code") 
+b1_match[['code','Sample','Study_y','serum','type','Cod_Nin_x']]
+b1_match[['code']].duplicated().sum() #verify uniqueness of matching. check
+b1_match.shape #73
+#verified in R that codes 28 and 86 are in hospital data
+
+#see if there is ambiguous matching to cohort for batch_1_like and batch_2_3_4 repeat obs
+sm = sampleMap[sampleMap.Study!="Hospital"]
+#note: lots of ambiguous mapping if matching with code (and not Cod_Nin) to cohort data
+smatch = pd.merge(sm, df_prelim, on="Cod_Nin", how="left") #4 matching ID codes
+smatch[['code_x','Sample','Study_y','serum','type','code_y']]
+notCohort = smatch[smatch['code_y'].isnull()][['code_x','Sample','type','Cod_Nin','Diagnosis']]
+
+#now see if the 12 non-matching codes will match unambiguously to hospital data.  Yes(!)
+df_hospit = df_prelim[df_prelim.Study=="Hospital"]
+hmatch = pd.merge(notCohort, df_hospit, left_on='code_x', right_on='code')
+hmatch[['code_x','Sample','Study','serum','type','code']]
+#what about to the cohort data (not caring about Cod_Nin?).  Matches with 351, 404, 420, etc.
+df_cohort = df_prelim[df_prelim.Study=="Cohort"]
+cmatch = pd.merge(notCohort, df_cohort, left_on='code_x', right_on='code')
+cmatch[['code_x','Sample','Study','serum','type','code']]
+
+#Note: based on above explorations, 
+    # I added cohort/hospital indicators to "RP_batch1_sample_merge_info.csv"
+
+
+#check out batch 1 reverse phase data from Kristof
+respD = np.load(boutDir+"RPbins50x50"+".npy") #load numpy array if not already in memory
+#basic info on respD
+respD.shape #367 runs
+respD_unique = np.unique(respD[:,0])
+respD_unique.size #185 unique runs
+stats.itemfreq(respD[:,0]) #nearly all patient data run 3 times; quality controls once
+patients = [] #get patient list excluding QCs
+for x in respD_unique:
+    if x.find('Q')==-1:
+        patients.append(x)
+print len(patients) #92 unique patients (excludes quality controls)
+
+#read in Natalia batch 1 data and convert to pandas dataframe
+respD2 = np.load(boutDir+"NPbins50x50"+".npy")
+respD2.shape #91 runs 
+respD2_unique = np.unique(respD2[:,0])
+respD2_unique.size #90 unique runs (not all used per Natalia's advice)
+stats.itemfreq(respD2[:,0]) #ID0251 is repeated
+
+#compare patients in Natalia's and Kristof's data
+pdf = set(respD2_unique)
+myinter = pdf.intersection(set(patients))
+len(myinter)  #74 patients in common
+set(patients)-myinter #18 patients in Kristof but not Natalia data
+pdf-myinter #16 patients in Natalia but not Kristof data
+
+
+###############################################################################
+#################### Experiment with reading in clinical data  ################
 ###############################################################################
 
 df = pd.read_csv(inputsDir + "clin12_full_wImputedRF1.txt", sep='\t', 

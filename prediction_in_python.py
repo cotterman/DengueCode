@@ -60,7 +60,9 @@ np.random.seed(100)
 #inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
 #outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
 inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
+clinDir = "/srv/scratch/ccotter/lab_and_clinical_data/Cleaned/" #mitra and nandi
 outDir = "/users/ccotter/python_out/" #mitra and nandi
+boutDir = "/srv/scratch/ccotter/py_out/"
 
 VERBOSE = True
 def log_statement(statement):
@@ -355,55 +357,80 @@ def add_imput_dummies(include_imp_dums, imp_dums_only, df, predictors_prelim):
 
     return predictors
 
-def get_data(inputsDir, filename, NoInitialDHF, patient_sample, 
-            NoOFI, outcome, predictors_prelim, include_study_dum, 
-            include_imp_dums, imp_dums_only, standardize=True):
+def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample, 
+            NoOFI, onlyLCMSpatients, outcome, predictors_prelim, include_study_dum, 
+            include_imp_dums, imp_dums_only, include_clinvars, include_LCMSvars, standardize=True):
     """
-        Create pandas dataframe from text file created in R
+        Create pandas dataframe from text files created in R and extract_LCMS_features.py
         Standardize predictor variables (if standardize=True)
         Eliminate columns according to:
             predictors_prelim (List of covariates, excluding study and imputation indictors)
             include_study_dum (True to include is.cohort variable)
             include_imp_dums (True to include imputation dummy variables)
+        Add columns according to:
+            include_LCMSvars (True to add LCMS variables)
         Eliminate observations according to:
             NoInitialDHF: True means to exclude patients with initial severe dengue Dx
             patient_sample: "cohort_only","hospital_only" or "both"
             NoOFI: True means to eliminate non-dengue patients
+            onlyLCMSpatients: True means to eliminate patients without LCMS data
     """
     df_prelim = pd.read_csv(inputsDir + filename, sep='\t', 
         true_values=["True","Yes","TRUE"], false_values=["False","No","FALSE"], 
         na_values=['NaN','NA']) 
-    #ML funcs give predicted probs only for int outcomes
-        #currently turning to int as part of read_csv
-    #df["is.DEN"] = df["is.DEN"].astype(int) 
-    df_prelim[["is.female"]] = (df_prelim[["Sexo"]]=="female").astype(int)
-    df_prelim[["is.cohort"]] = (df_prelim[["Study"]]=="Cohort").astype(int) 
 
-    #standardize data before removing rows 
-        #want standardization to be same for cohort and hospit data 
-        #scale data since ridge/elastic net are not equivariant under scaling
-    X_prelim = df_prelim[predictors_prelim]
-    if (standardize==True):
-        X = X_prelim.apply(lambda x: (x - x.mean()) / x.std() )
+    if include_clinvars==True:
+
+        df_prelim[["is.female"]] = (df_prelim[["Sexo"]]=="female").astype(int)
+        df_prelim[["is.cohort"]] = (df_prelim[["Study"]]=="Cohort").astype(int) 
+
+        #standardize data before removing rows 
+            #want standardization to be same for cohort and hospit data 
+            #scale data since ridge/elastic net are not equivariant under scaling
+        X_prelim = df_prelim[predictors_prelim]
+        if (standardize==True):
+            X = X_prelim.apply(lambda x: (x - x.mean()) / x.std() )
+        else:
+            X = X_prelim
+
+        #modify predictor list so as to include cohort and imputation dummies if desired
+            #note we are adding them after standardizing to prevent them from being standardized
+        if include_study_dum==True:
+            predictors = predictors_prelim + ["is.cohort"]
+        else:
+            predictors = predictors_prelim
+        all_predictors = add_imput_dummies(include_imp_dums, imp_dums_only, df_prelim, predictors)
+        #get list of variables that were not scaled (could be an empty list)
+        addons =  [v for v in all_predictors if v not in predictors_prelim]  
+
+        #put back the variables that were not scaled
+        nonXdf = df_prelim[['code','Study','DENV','WHO_initial_given','Cod_Nin',outcome] + addons]
+        if imp_dums_only == True: #only use imputation indicators
+            df = nonXdf 
+        else: #include clinical info plus possible addons
+            df = pd.concat([nonXdf, X], axis=1)
+
     else:
-        X = X_prelim
+        #no need for standardizing and building predictor list if not including clin vars
+        df = df_prelim
+        all_predictors = []
+    
 
-    #modify predictor list so as to include cohort and imputation dummies if desired
-        #note we are adding them after standardizing to prevent them from being standardized
-    if include_study_dum==True:
-        predictors = predictors_prelim + ["is.cohort"]
-    else:
-        predictors = predictors_prelim
-    all_predictors = add_imput_dummies(include_imp_dums, imp_dums_only, df_prelim, predictors)
-    #get list of variables that were not scaled (could be an empty list)
-    addons =  [v for v in all_predictors if v not in predictors_prelim]  
-
-    #put back the variables that were not scaled
-    nonXdf = df_prelim[['code','Study','DENV','WHO_initial_given',outcome] + addons]
-    if imp_dums_only == True: #only use imputation indicators
-        df = nonXdf 
-    else: #include clinical info plus possible addons
-        df = pd.concat([nonXdf, X], axis=1)
+    #add in LCMS data if desired 
+    if include_LCMSvars==True or onlyLCMSpatients==True:
+        LCMS = pd.read_pickle(boutDir+inLCMSData)
+        #inner join to keep only LCMS patients
+        df = pd.merge(df, LCMS, on=('code','Study','Cod_Nin'))
+    #add LCMS variables if desired 
+        #standardize these? They are on same scale as one another but not with clinvars
+        #not a huge deal since we will generally do VIM stuff separately for clin and LCMS
+    if include_LCMSvars==True:
+        LCMSvars_found = []
+        for var in df.columns.values:
+            y = re.findall("MZ_.*", var)
+            assert len(y) in (0,1)
+            if len(y)==1: LCMSvars_found.append(y[0])
+        all_predictors = all_predictors + LCMSvars_found
     
     #remove rows according to parameter values
     if (NoInitialDHF==True):
@@ -430,7 +457,7 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
     print "Number of vars: " , p
 
     #set parameters for GridSearchCV
-    n_jobs = 5
+    n_jobs = 2
     cv_grid = 5
 
     mean = dummy.DummyClassifier(strategy='most_frequent') #predict most frequent class
@@ -468,7 +495,7 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
     RFtune = grid_search.GridSearchCV(RandomForestClassifier(), RFparams,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
 
-    NNparams = {'n_neighbors':[3,5,7,9,11,13], 'weights':['uniform','distance']}
+    NNparams = {'n_neighbors':[3,5,7,9,11], 'weights':['uniform','distance']}
     NNtune = grid_search.GridSearchCV(neighbors.KNeighborsClassifier(), NNparams,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
 
@@ -645,6 +672,11 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
     """
         Plots the ROC curves using actual y and predicted probabilities
     """
+
+    sns.set_style("whitegrid") #necessary for getting back graph frame
+    mpl.rcParams['lines.color'] = 'white'
+    mpl.rcParams['text.color'] = 'white'
+
     #get list of libnames, ordered by cvAUC
     if ran_Analysis==True:
         libnames = resultsDF.index.values #array with method labels
@@ -652,7 +684,8 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
     else:
         libnames = resultsDF['Unnamed: 0']
     
-    plt.figure(figsize=(6.5,6.5))
+    plt.figure(figsize=(5.3,5.3)) #(6.5,6.5) for dissertation; 
+    plt.grid(b=True, which='both', axis='both',color='0.3',linestyle='-')
     for counter, libname in enumerate(libnames):
         pred_prob = predDF[libname]
         #points to plot
@@ -670,10 +703,15 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
         plt.plot(false_positive_rate, true_positive_rate, lw=2.2, 
             color=mycolors[counter], label=libname+', AUC = %0.2f'% roc_auc)
     #create legend and labels etc. and save graph
-    plt.xlabel('False positive rate')
-    plt.ylabel('True positive rate')
-    plt.legend(loc='best')
-    plt.savefig(outDir + 'C_' + figName + '.eps', dpi=1200)
+    plt.xlabel('False positive rate', color='white')
+    plt.ylabel('True positive rate', color='white')
+    plt.xticks(color='white')
+    plt.yticks(color='white')
+    leg = plt.legend(loc='best')
+    for text in leg.get_texts():
+        plt.setp(text, color='white')
+    plt.title('ROC curves for distinguishing OFI from dengue')
+    plt.savefig(outDir + 'C_' + figName + '.png', dpi=1200, transparent=True)
     #plt.show()
     plt.close()
     
@@ -822,6 +860,12 @@ def plot_VIMs(resultsVIM, outDir, figname, forget_VIM1):
             VIM measures are expected to be found in resultsVIM dataframe
             If forget_VIM1 is True, will not plot VIM1
         """
+
+        sns.set_style("whitegrid") #necessary for getting back graph frame
+        mpl.rcParams['lines.color'] = 'white'
+        mpl.rcParams['text.color'] = 'white'
+        
+
         #print "to graph: " 
         #print resultsVIM[["varname","RF_OOB","RF_Gini","SL_Univariate","SL_VariableDrop"]]
         if forget_VIM1==False:
@@ -834,7 +878,8 @@ def plot_VIMs(resultsVIM, outDir, figname, forget_VIM1):
         resultsVIM.sort(columns=['CC_broadcat_sort','SL_Univariate'], axis=0, 
             ascending=[False,True], inplace=True)
         # plot VIM results in one graph
-        plt.figure(figsize=(6.9,8))
+        plt.figure(figsize=(6.9,8)) #(6.9,8)
+        plt.grid(b=True, which='both', axis='both',color='0.3',linestyle='-')
         positions = np.arange(resultsVIM.shape[0]) + .5
         #symbols and lines for for each VIM
         mymarkers = ['s','o','^','*'] 
@@ -842,7 +887,8 @@ def plot_VIMs(resultsVIM, outDir, figname, forget_VIM1):
         mylstyles = ['-','-','--','-'] 
         mynoimportvals = [0, 0, 50, 0]
         #colors to indicate variable category
-        colors = ["yellow","green","blue","purple"] #1st color will be ignored
+        #colors = ["yellow","green","blue","purple"] #1st color will be ignored
+        colors = ["yellow","yellow green","cyan","pastel purple"] #JSM poster
         mycolors = sns.xkcd_palette(colors) #get_colors() #sns.color_palette("Set2", 10)
         clist=[mycolors[catnum] for catnum in resultsVIM['CC_broadcat_sort'].values ]  
         for counter, VIM in enumerate(VIMlist):
@@ -855,32 +901,36 @@ def plot_VIMs(resultsVIM, outDir, figname, forget_VIM1):
                 color=clist, label=VIM)
             #add verticle lines to indicate no importance
             plt.axvline(x=mynoimportvals[counter], linestyle = mylstyles[counter], 
-                    ymin=0, ymax=resultsVIM.shape[0], color='0', linewidth=.5)
+                    ymin=0, ymax=resultsVIM.shape[0], color='1', linewidth=.5)
         #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
         plt.subplots_adjust(left=.2, right=.9, top=.9, bottom=.1)
         #create legend and labels etc. and save graph
-        plt.xlabel('Importance')
+        plt.xlabel('Importance', color='white')
         xmin = min( [min(resultsVIM[column]) for column in VIMlist] ) - 1
         print "xmin: " , xmin
         plt.xlim(xmin,100)
+        plt.xticks(color='white')
         plt.ylim(0,resultsVIM.shape[0])
         plt.yticks(positions, np.array(resultsVIM["CC_name"]))
         plt.tick_params(axis='y', labelsize=6)
         #get the coloring of y-axis labels to correspond to variable cost categories
         [l.set_color(clist[i]) for i,l in enumerate(plt.gca().get_yticklabels())]   
         #remove the tick marks; they are unnecessary with the tick lines we just plotted.  
-        plt.tick_params(axis="both", which="both", bottom="off", top="off",  
-                        labelbottom="on", left="off", right="off", labelleft="on") 
+        #plt.tick_params(axis="both", which="both", bottom="off", top="off",  
+        #                labelbottom="on", left="off", right="off", labelleft="on") 
         #create a custom legend so I can make the colors gray 
             #otherwise legend markers will be color of last variable category plotted
         lhandles = []
         for counter, VIM in enumerate(VIMlist):
-            hand = mlines.Line2D([], [], fillstyle='full', color='0', linewidth=.5,
+            hand = mlines.Line2D([], [], fillstyle='full', color='1', linewidth=.5,
                         marker=mymarkers[counter], linestyle = mylstyles[counter],
                         markersize=mymarkersizes[counter])
             lhandles.append(hand)
-        plt.legend((lhandles), (VIM_labels), prop={'size':8})
-        plt.savefig(outDir + figname + '.eps', dpi=1200)
+        plt.title('Importance of variables for distinguishing OFI from dengue')
+        leg = plt.legend((lhandles), (VIM_labels), prop={'size':8})
+        for text in leg.get_texts():
+            plt.setp(text, color='white')
+        plt.savefig(outDir + figname + '.png', dpi=1200, transparent=True)
         #plt.show()
         plt.close()
 
@@ -921,6 +971,11 @@ def parse_arguments():
     parser.add_argument('--patient_sample', dest='patient_sample',
                         default = "hospital_only")
     parser.add_argument('--testSample', dest='testSample')
+
+    parser.add_argument('--include_clinvars', action='store_true', default=False)
+    parser.add_argument('--include_LCMSvars', action='store_true', default=False)
+    parser.add_argument('--onlyLCMSpatients', action='store_true', default=False)
+
     parser.add_argument('--predictor_desc', dest='predictor_desc',
                         default = "covarlist_all")
 
@@ -928,8 +983,9 @@ def parse_arguments():
     parser.add_argument('--include_imp_dums', action='store_true', default=False)
     parser.add_argument('--imp_dums_only', action='store_true', default=False)
 
-    parser.add_argument('--inputData', dest='inputData', 
+    parser.add_argument('--inClinData', dest='inClinData', 
                         default = "clin12_full_wImputedRF1.txt")
+    parser.add_argument('--inLCMSData', dest='inLCMSData', default='')
 
     parser.add_argument('--testlib', action='store_true', default=False)
 
@@ -939,9 +995,11 @@ def parse_arguments():
             args.run_VIM, args.run_VIM1, args.run_VIM2,
             args.outcome,
             args.NoOFI, args.NoInitialDHF, 
-            args.patient_sample, args.testSample, args.predictor_desc,
+            args.patient_sample, args.testSample, 
+            args.include_clinvars, args.include_clinvars, args.include_LCMSvars, 
+            args.onlyLCMSpatients, args.predictor_desc,
             args.include_study_dum, args.include_imp_dums, args.imp_dums_only,
-            args.inputData, args.testlib)
+            args.inClinData, args.inLCMSData, args.testlib)
 
 def main():
     start_time_overall = time.time()
@@ -955,53 +1013,70 @@ def main():
     if params_from_commandline==True:
         ## Parse parameters provided at command-line level
         (run_MainAnalysis, plot_MainAnalysis, run_testdata, run_VIM, run_VIM1, run_VIM2,
-         outcome, NoOFI, NoInitialDHF, patient_sample, testSample, predictor_desc,
-         include_study_dum, include_imp_dums, imp_dums_only, inputData, testlib
-        ) = parse_arguments()
+         outcome, NoOFI, NoInitialDHF, patient_sample, testSample, 
+         include_clinvars, include_clinvars, include_LCMSvars, onlyLCMSpatients,
+         predictor_desc,
+         include_study_dum, include_imp_dums, imp_dums_only, 
+         inClinData, inLCMSData, testlib
+         ) = parse_arguments()
 
     else:
         ## Choose which parts of code to run ##
         run_MainAnalysis = False  # if false, will expect to get results from file
         plot_MainAnalysis = False  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
+        #determine which variable importance code to run
         run_VIM = True  # if false, none of the VIM code will be run
-        forget_VIM1 = True # if true, will do VIM analysis and graphs without VIM1 output
+        forget_VIM1 = False # if true, will do VIM analysis and graphs without VIM1 output
         run_VIM1 = False # if false, will expect to obtain VIM1 (multivariate) results from file
         run_VIM2 = False  # if false, will expect to obtain VIM2 (univariate) results from file
-        only_VIM2 = True # true if just want to plot VIM2 (and not other VIMs)
+        only_VIM2 = False # true if just want to plot VIM2 (and not other VIMs)
 
         ## Choose outcome variable ##
         outcome = "is.DEN"  
         #outcome = "is.DHF_DSS"
 
         ## Choose whether to exclude OFI patients ##
-        NoOFI = True #only applies to is.DHF_DSS analyses
+        NoOFI = False #only applies to is.DHF_DSS analyses
 
         ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
         NoInitialDHF = True #only applies to is.DHF_DSS analyses (should generally select True)
 
-        ## Choose patient sample ##
+        ## Choose patient sample - only applies when not using LCMS data ##
         #patient_sample = "all" 
         #patient_sample = "cohort_only"
         patient_sample = "hospital_only"
 
         ## Choose sample to treat as independent test set (if run_testdata=True) ##
-        testSample = "hospital" #options: "cohort" or "hospital
-        
-        ## Choose list of variables to use in prediction ##
+        testSample = "hospital" #options: "cohort" or "hospital"
+
+        ## Choose whether to include clinical variables and/or LCMS features ##
+        include_clinvars = True #true to include clinical variables
+        include_LCMSvars = False #true to include LCMS features
+
+        ## Choose whether to restrict to only LCMS patients ##
+        onlyLCMSpatients = False #true to include only patients with LCMS data
+        #eventually, instead have trainObs="all"/"LCMSonly" and testObs="all"/"LCMSonly"        
+
+        ## Choose list of clinical variables to use in prediction 
+            #applicable if include_clinvars==True (else will be ignored)
         predictor_desc = "covarlist_all"
         #predictor_desc = "covarlist_noUltraX"
         #predictor_desc = "covarlist_CohortRestrict"
         #predictor_desc = "covarlist_genOnly"
         #predictor_desc = "covarlist_custom"  #one-off analysis
 
-        ## Choose whether to include  ##
+        ## Choose whether to include various indicators ##
         include_study_dum = False #true to include is.cohort indicator 
-        include_imp_dums = True #true to add imputation dummies to covariate list
-        imp_dums_only = True #true to run with imputation dummies and no other variable values
+        include_imp_dums = False #true to add imputation dummies to covariate list
+        imp_dums_only = False #true to run with imputation dummies and no other variable values
 
-        ## Choose input data (this data was prepared in R) ##
-        inputData = "clin12_full_wImputedRF1.txt"
+        ## Choose input clinical data ##
+        inClinData = "clin12_full_wImputedRF1.txt" #data prepared in R
+
+        ## Choose input LCMS data ##
+        #inLCMSData = "NPbins50x50" #prepared in extract_LCMS_features.py
+        inLCMSData = "RPbins50x50" #prepared in extract_LCMS_features.py
         
         ## Use a tiny SL library for testing purposes
         testlib = False #false if you want to run normally
@@ -1009,6 +1084,8 @@ def main():
     ## Choose variable screening method (if any) ##
     screenType = None #current options: None, "univariate", "L1"
     screenNum = 5 #applies when screenType != None; else will be ignored
+    #choose True to include clinical covariates when selecting best LCMS features
+        #only applies when screenType!=None, include_clinvars=T and include_LCMSvars=T
 
     ## Choose whether to standardize predictors (will not apply to imputation dummies)
     std_vars = True 
@@ -1036,6 +1113,10 @@ def main():
         restrictions = ""
     if patient_sample=="cohort_only" or patient_sample=="hospital_only":
         include_study_dum = False
+    #if we are restricting to LCMS patients we will not want to restrict on hospital/cohort
+    if include_LCMSvars==True or onlyLCMSpatients==True:
+        patient_sample=="all"
+        print "AAAAAAAAHHHHHHHHHH!!!!!!!!!!!!!"
 
     ## Suffix to indicate use of imputation dummies
     if imp_dums_only==True:
@@ -1047,16 +1128,27 @@ def main():
     else: # all covariates, but no missing indicators
         FileNameSuffix = "" #could use "_noDums" but instead I will use no suffix
 
+    ## Check for illegal parameter setting combos
+    try:
+        assert include_clinvars==True or include_LCMSvars == True
+    except AssertionError:
+        print "Parameter error: At least one of include_clinvars or include_LCMSvars must be True"
+        exit(1)
+
+    ###########################################################################
+
     ## Preliminary list of predictors ##
     predictors_prelim = get_predictor_desc(predictor_desc+".txt", outcome, NoOFI)
     #predictors_prelim = ['Melena']  #test
     #print "Original predictor list:\n" , predictors_prelim
 
     ## Create pandas dataframe with data that was cleaned in R ##
-    df, predictors = get_data(inputsDir, inputData, 
-                    NoInitialDHF, patient_sample, NoOFI, outcome, predictors_prelim,
-                    include_study_dum, include_imp_dums, imp_dums_only, standardize=std_vars)
-    print "Predictors to include, pre-screening:\n" , predictors
+    df, predictors = get_data(inputsDir, inClinData, inLCMSData,
+                    NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients,
+                    outcome, predictors_prelim,
+                    include_study_dum, include_imp_dums, imp_dums_only, 
+                    include_clinvars, include_LCMSvars, standardize=std_vars)
+    #print "Predictors to include, pre-screening:\n" , predictors
 
     ## Build library of classifiers ##
     screen, pred_count = get_screen(screenType, screenNum, predictors)
@@ -1071,7 +1163,21 @@ def main():
     #X, y=datasets.make_classification(n_samples=88, n_features=95) #toy data
 
     ## Name of text file containing performance measures (to either create or import)
-    outName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + FileNameSuffix
+        #used for main analysis and VIM analysis
+    if onlyLCMSpatients == True: 
+        #indicate restriction to only LCMS patients
+            #could potentially only use clinical vars with these patients (keep predictor_desc)
+        outName = FileNamePrefix + '_' + predictor_desc + '_'+inLCMSData+'patients' + FileNameSuffix
+    if include_LCMSvars == True:
+        #note: use of LCMS features implies restriction to LCMS patients
+        if include_clinvars == False:
+            outName = FileNamePrefix + '_covarlist_' + inLCMSData + FileNameSuffix
+        else:
+            outName = FileNamePrefix + '_' + predictor_desc + '_' + inLCMSData + FileNameSuffix
+    if onlyLCMSpatients == False and include_LCMSvars == False:
+        #case in which LCMS data is not used at all
+        outName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + FileNameSuffix
+    print "outName: " , outName 
 
     ## Get CV predictions and performance measures ##
     if run_MainAnalysis == True:
@@ -1080,11 +1186,11 @@ def main():
         resultsDF = pd.DataFrame() #empty df to hold performance measures
         # Super Learner
         start_time_cvSL = time.time()
-        sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-        SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
-        predDF.insert(loc=len(predDF.columns), column='Super Learner', value=SL_preds)
-        resultsDF = get_performance_vals(y, SL_preds, "Super Learner", 
-                                        cv_gen, 0.95, resultsDF)
+        #sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+        #SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
+        #predDF.insert(loc=len(predDF.columns), column='Super Learner', value=SL_preds)
+        #resultsDF = get_performance_vals(y, SL_preds, "Super Learner", 
+        #                                cv_gen, 0.95, resultsDF)
         log_statement("\ncvSL execution time: {} minutes".format(
             (time.time() - start_time_cvSL)/60. ) ) 
         # Results for each algorith in library
@@ -1112,9 +1218,10 @@ def main():
     ## Get predictions and performance measures for test (cohort) data ##
     if run_testdata == True:
         myoName = FileNamePrefix+'_'+predictor_desc+'_'+testSample+'Test'
-        dfnew, predictors = get_data(inputsDir, inputData, NoInitialDHF, 
-                testSample+"_only", NoOFI, outcome, predictors, 
-                include_study_dum, include_imp_dums, imp_dums_only, standardize=std_vars)
+        dfnew, predictors = get_data(inputsDir, inClinData, inLCMSData, NoInitialDHF, 
+                testSample+"_only", NoOFI, onlyLCMSpatients, outcome, predictors, 
+                include_study_dum, include_imp_dums, imp_dums_only, 
+                include_clinvars, include_LCMSvars, standardize=std_vars)
         Xnew = dfnew[predictors].astype(float).values
         ynew = dfnew[outcome].astype(int).values #make outcome 0/1 and convert to np array
         predDFnew, resultsDFnew = results_for_testset(X, y, Xnew, ynew, 
