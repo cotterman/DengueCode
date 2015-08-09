@@ -10,7 +10,7 @@ import subprocess
 run_MainAnalysis = '--run_MainAnalysis'
 plot_MainAnalysis = '' #'--plot_MainAnalysis' 
 NoInitialDHF = '--NoInitialDHF' #should generally be true (for prediction)
-
+onlyLCMSpatients = '--onlyLCMSpatients'
 #Loop thru parameters options
 ps = []
 for outcome in ['is.DHF_DSS']:
@@ -41,7 +41,7 @@ for outcome in ['is.DHF_DSS']:
 
                     #string args together
                     args = " ".join([run_MainAnalysis, plot_MainAnalysis, 
-                            include_clinvars, include_LCMSvars,
+                            include_clinvars, include_LCMSvars, onlyLCMSpatients,
                             NoOFI, NoInitialDHF, include_imp_dums, imp_dums_only,
                             '--outcome', outcome, '--inLCMSData', inLCMSData,
                             '--predictor_desc', predictor_desc])

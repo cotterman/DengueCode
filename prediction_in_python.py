@@ -419,12 +419,8 @@ def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample,
     #add in LCMS data if desired 
     if include_LCMSvars==True or onlyLCMSpatients==True:
         LCMS = pd.read_pickle(boutDir+inLCMSData)
-        #inner join if we only want to keep LCMS patients
-        if onlyLCMSpatients==True:
-            df = pd.merge(df, LCMS, on=('code','Study','Cod_Nin'))
-        #otherwise left join
-        else:
-            df = pd.merge(df, LCMS, on=('code','Study','Cod_Nin'), how='left')
+        #inner join to keep only LCMS patients
+        df = pd.merge(df, LCMS, on=('code','Study','Cod_Nin'))
     #add LCMS variables if desired 
         #standardize these? They are on same scale as one another but not with clinvars
         #not a huge deal since we will generally do VIM stuff separately for clin and LCMS
@@ -499,7 +495,7 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
     RFtune = grid_search.GridSearchCV(RandomForestClassifier(), RFparams,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
 
-    NNparams = {'n_neighbors':[3,5,7,9,11,13], 'weights':['uniform','distance']}
+    NNparams = {'n_neighbors':[3,5,7,9,11], 'weights':['uniform','distance']}
     NNtune = grid_search.GridSearchCV(neighbors.KNeighborsClassifier(), NNparams,
         score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
 
@@ -676,6 +672,11 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
     """
         Plots the ROC curves using actual y and predicted probabilities
     """
+
+    sns.set_style("whitegrid") #necessary for getting back graph frame
+    mpl.rcParams['lines.color'] = 'white'
+    mpl.rcParams['text.color'] = 'white'
+
     #get list of libnames, ordered by cvAUC
     if ran_Analysis==True:
         libnames = resultsDF.index.values #array with method labels
@@ -683,7 +684,8 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
     else:
         libnames = resultsDF['Unnamed: 0']
     
-    plt.figure(figsize=(6.5,6.5))
+    plt.figure(figsize=(5.3,5.3)) #(6.5,6.5) for dissertation; 
+    plt.grid(b=True, which='both', axis='both',color='0.3',linestyle='-')
     for counter, libname in enumerate(libnames):
         pred_prob = predDF[libname]
         #points to plot
@@ -701,10 +703,15 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
         plt.plot(false_positive_rate, true_positive_rate, lw=2.2, 
             color=mycolors[counter], label=libname+', AUC = %0.2f'% roc_auc)
     #create legend and labels etc. and save graph
-    plt.xlabel('False positive rate')
-    plt.ylabel('True positive rate')
-    plt.legend(loc='best')
-    plt.savefig(outDir + 'C_' + figName + '.eps', dpi=1200)
+    plt.xlabel('False positive rate', color='white')
+    plt.ylabel('True positive rate', color='white')
+    plt.xticks(color='white')
+    plt.yticks(color='white')
+    leg = plt.legend(loc='best')
+    for text in leg.get_texts():
+        plt.setp(text, color='white')
+    plt.title('ROC curves for distinguishing OFI from dengue')
+    plt.savefig(outDir + 'C_' + figName + '.png', dpi=1200, transparent=True)
     #plt.show()
     plt.close()
     
@@ -853,6 +860,12 @@ def plot_VIMs(resultsVIM, outDir, figname, forget_VIM1):
             VIM measures are expected to be found in resultsVIM dataframe
             If forget_VIM1 is True, will not plot VIM1
         """
+
+        sns.set_style("whitegrid") #necessary for getting back graph frame
+        mpl.rcParams['lines.color'] = 'white'
+        mpl.rcParams['text.color'] = 'white'
+        
+
         #print "to graph: " 
         #print resultsVIM[["varname","RF_OOB","RF_Gini","SL_Univariate","SL_VariableDrop"]]
         if forget_VIM1==False:
@@ -865,7 +878,8 @@ def plot_VIMs(resultsVIM, outDir, figname, forget_VIM1):
         resultsVIM.sort(columns=['CC_broadcat_sort','SL_Univariate'], axis=0, 
             ascending=[False,True], inplace=True)
         # plot VIM results in one graph
-        plt.figure(figsize=(6.9,8))
+        plt.figure(figsize=(6.9,8)) #(6.9,8)
+        plt.grid(b=True, which='both', axis='both',color='0.3',linestyle='-')
         positions = np.arange(resultsVIM.shape[0]) + .5
         #symbols and lines for for each VIM
         mymarkers = ['s','o','^','*'] 
@@ -873,7 +887,8 @@ def plot_VIMs(resultsVIM, outDir, figname, forget_VIM1):
         mylstyles = ['-','-','--','-'] 
         mynoimportvals = [0, 0, 50, 0]
         #colors to indicate variable category
-        colors = ["yellow","green","blue","purple"] #1st color will be ignored
+        #colors = ["yellow","green","blue","purple"] #1st color will be ignored
+        colors = ["yellow","yellow green","cyan","pastel purple"] #JSM poster
         mycolors = sns.xkcd_palette(colors) #get_colors() #sns.color_palette("Set2", 10)
         clist=[mycolors[catnum] for catnum in resultsVIM['CC_broadcat_sort'].values ]  
         for counter, VIM in enumerate(VIMlist):
@@ -886,32 +901,36 @@ def plot_VIMs(resultsVIM, outDir, figname, forget_VIM1):
                 color=clist, label=VIM)
             #add verticle lines to indicate no importance
             plt.axvline(x=mynoimportvals[counter], linestyle = mylstyles[counter], 
-                    ymin=0, ymax=resultsVIM.shape[0], color='0', linewidth=.5)
+                    ymin=0, ymax=resultsVIM.shape[0], color='1', linewidth=.5)
         #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
         plt.subplots_adjust(left=.2, right=.9, top=.9, bottom=.1)
         #create legend and labels etc. and save graph
-        plt.xlabel('Importance')
+        plt.xlabel('Importance', color='white')
         xmin = min( [min(resultsVIM[column]) for column in VIMlist] ) - 1
         print "xmin: " , xmin
         plt.xlim(xmin,100)
+        plt.xticks(color='white')
         plt.ylim(0,resultsVIM.shape[0])
         plt.yticks(positions, np.array(resultsVIM["CC_name"]))
         plt.tick_params(axis='y', labelsize=6)
         #get the coloring of y-axis labels to correspond to variable cost categories
         [l.set_color(clist[i]) for i,l in enumerate(plt.gca().get_yticklabels())]   
         #remove the tick marks; they are unnecessary with the tick lines we just plotted.  
-        plt.tick_params(axis="both", which="both", bottom="off", top="off",  
-                        labelbottom="on", left="off", right="off", labelleft="on") 
+        #plt.tick_params(axis="both", which="both", bottom="off", top="off",  
+        #                labelbottom="on", left="off", right="off", labelleft="on") 
         #create a custom legend so I can make the colors gray 
             #otherwise legend markers will be color of last variable category plotted
         lhandles = []
         for counter, VIM in enumerate(VIMlist):
-            hand = mlines.Line2D([], [], fillstyle='full', color='0', linewidth=.5,
+            hand = mlines.Line2D([], [], fillstyle='full', color='1', linewidth=.5,
                         marker=mymarkers[counter], linestyle = mylstyles[counter],
                         markersize=mymarkersizes[counter])
             lhandles.append(hand)
-        plt.legend((lhandles), (VIM_labels), prop={'size':8})
-        plt.savefig(outDir + figname + '.eps', dpi=1200)
+        plt.title('Importance of variables for distinguishing OFI from dengue')
+        leg = plt.legend((lhandles), (VIM_labels), prop={'size':8})
+        for text in leg.get_texts():
+            plt.setp(text, color='white')
+        plt.savefig(outDir + figname + '.png', dpi=1200, transparent=True)
         #plt.show()
         plt.close()
 
@@ -977,8 +996,8 @@ def parse_arguments():
             args.outcome,
             args.NoOFI, args.NoInitialDHF, 
             args.patient_sample, args.testSample, 
-            args.include_clinvars, args.include_clinvars, include_LCMSvars, args.onlyLCMSpatients,
-            args.predictor_desc,
+            args.include_clinvars, args.include_clinvars, args.include_LCMSvars, 
+            args.onlyLCMSpatients, args.predictor_desc,
             args.include_study_dum, args.include_imp_dums, args.imp_dums_only,
             args.inClinData, args.inLCMSData, args.testlib)
 
@@ -1003,19 +1022,19 @@ def main():
 
     else:
         ## Choose which parts of code to run ##
-        run_MainAnalysis = True  # if false, will expect to get results from file
+        run_MainAnalysis = False  # if false, will expect to get results from file
         plot_MainAnalysis = False  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
         #determine which variable importance code to run
-        run_VIM = False  # if false, none of the VIM code will be run
-        forget_VIM1 = True # if true, will do VIM analysis and graphs without VIM1 output
+        run_VIM = True  # if false, none of the VIM code will be run
+        forget_VIM1 = False # if true, will do VIM analysis and graphs without VIM1 output
         run_VIM1 = False # if false, will expect to obtain VIM1 (multivariate) results from file
         run_VIM2 = False  # if false, will expect to obtain VIM2 (univariate) results from file
-        only_VIM2 = True # true if just want to plot VIM2 (and not other VIMs)
+        only_VIM2 = False # true if just want to plot VIM2 (and not other VIMs)
 
         ## Choose outcome variable ##
-        #outcome = "is.DEN"  
-        outcome = "is.DHF_DSS"
+        outcome = "is.DEN"  
+        #outcome = "is.DHF_DSS"
 
         ## Choose whether to exclude OFI patients ##
         NoOFI = False #only applies to is.DHF_DSS analyses
@@ -1024,9 +1043,9 @@ def main():
         NoInitialDHF = True #only applies to is.DHF_DSS analyses (should generally select True)
 
         ## Choose patient sample - only applies when not using LCMS data ##
-        patient_sample = "all" 
+        #patient_sample = "all" 
         #patient_sample = "cohort_only"
-        #patient_sample = "hospital_only"
+        patient_sample = "hospital_only"
 
         ## Choose sample to treat as independent test set (if run_testdata=True) ##
         testSample = "hospital" #options: "cohort" or "hospital"
@@ -1036,7 +1055,7 @@ def main():
         include_LCMSvars = False #true to include LCMS features
 
         ## Choose whether to restrict to only LCMS patients ##
-        onlyLCMSpatients = True #true to include only patients with LCMS data
+        onlyLCMSpatients = False #true to include only patients with LCMS data
         #eventually, instead have trainObs="all"/"LCMSonly" and testObs="all"/"LCMSonly"        
 
         ## Choose list of clinical variables to use in prediction 
@@ -1097,6 +1116,7 @@ def main():
     #if we are restricting to LCMS patients we will not want to restrict on hospital/cohort
     if include_LCMSvars==True or onlyLCMSpatients==True:
         patient_sample=="all"
+        print "AAAAAAAAHHHHHHHHHH!!!!!!!!!!!!!"
 
     ## Suffix to indicate use of imputation dummies
     if imp_dums_only==True:
@@ -1166,11 +1186,11 @@ def main():
         resultsDF = pd.DataFrame() #empty df to hold performance measures
         # Super Learner
         start_time_cvSL = time.time()
-        sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-        SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
-        predDF.insert(loc=len(predDF.columns), column='Super Learner', value=SL_preds)
-        resultsDF = get_performance_vals(y, SL_preds, "Super Learner", 
-                                        cv_gen, 0.95, resultsDF)
+        #sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+        #SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
+        #predDF.insert(loc=len(predDF.columns), column='Super Learner', value=SL_preds)
+        #resultsDF = get_performance_vals(y, SL_preds, "Super Learner", 
+        #                                cv_gen, 0.95, resultsDF)
         log_statement("\ncvSL execution time: {} minutes".format(
             (time.time() - start_time_cvSL)/60. ) ) 
         # Results for each algorith in library
