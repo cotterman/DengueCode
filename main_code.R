@@ -92,6 +92,7 @@ source(paste(codeDir,"prediction_functions_v2.R",sep=""))
 #info on clinical variables (data types and applicability to various analyses)
 clinic_varsD = readWorksheetFromFile(paste(clinical_inputsDir,"List of clinical variables for analysis_v6.xlsx", sep=""), sheet=1)
 write.table(clinic_varsD, paste(outputsDir,"clinic_varsD.txt", sep=""),sep = ",")
+clinic_varsD = read.table(paste(outputsDir,"clinic_varsD.txt", sep=""),sep = ",")
 
 #this takes a bit of time to run (~ 10 min) b/c of the imputing missing values step
 source(paste(codeDir,"create_data_for_analysis.R",sep="")) 

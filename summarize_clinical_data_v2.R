@@ -330,7 +330,7 @@ dev.off()
 
 ## missingness
 # "38 variables never missing for any of the hospital patients while 10 variables are never missing across the combined data"
-df = dc #toggle this
+df = dh #toggle this
 var_missCount = sapply(df[varlist], function(x) sum(is.na(x)))
 table(var_missCount)
 var_nomissCount = sapply(df[varlist], function(x) sum(!is.na(x)))
