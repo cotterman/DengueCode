@@ -684,7 +684,7 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
     else:
         libnames = resultsDF['Unnamed: 0']
     
-    plt.figure(figsize=(5.3,5.3)) #(6.5,6.5) for dissertation; 
+    plt.figure(figsize=(6.3,6.3)) #(6.5,6.5) for dissertation; 
     plt.grid(b=True, which='both', axis='both',color='0.3',linestyle='-')
     for counter, libname in enumerate(libnames):
         pred_prob = predDF[libname]
@@ -703,14 +703,15 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
         plt.plot(false_positive_rate, true_positive_rate, lw=2.2, 
             color=mycolors[counter], label=libname+', AUC = %0.2f'% roc_auc)
     #create legend and labels etc. and save graph
-    plt.xlabel('False positive rate', color='white')
-    plt.ylabel('True positive rate', color='white')
-    plt.xticks(color='white')
-    plt.yticks(color='white')
+    plt.xlabel('False positive rate', color='white',size=16)
+    plt.ylabel('True positive rate', color='white',size=16)
+    plt.xticks(color='white',size=14)
+    plt.yticks(color='white',size=14)
     leg = plt.legend(loc='best')
     for text in leg.get_texts():
-        plt.setp(text, color='white')
-    plt.title('ROC curves for distinguishing OFI from dengue')
+        plt.setp(text, color='white', size=14)
+    #plt.title('ROC curves for distinguishing OFI from dengue')
+    #note: .png can be done with transparent background while .eps cannot
     plt.savefig(outDir + 'C_' + figName + '.png', dpi=1200, transparent=True)
     #plt.show()
     plt.close()
@@ -1023,10 +1024,10 @@ def main():
     else:
         ## Choose which parts of code to run ##
         run_MainAnalysis = False  # if false, will expect to get results from file
-        plot_MainAnalysis = False  # if true, will create figures for main analysis
+        plot_MainAnalysis = True  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
         #determine which variable importance code to run
-        run_VIM = True  # if false, none of the VIM code will be run
+        run_VIM = False  # if false, none of the VIM code will be run
         forget_VIM1 = False # if true, will do VIM analysis and graphs without VIM1 output
         run_VIM1 = False # if false, will expect to obtain VIM1 (multivariate) results from file
         run_VIM2 = False  # if false, will expect to obtain VIM2 (univariate) results from file
