@@ -57,11 +57,11 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-#inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
-#outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
-inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
+inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
+outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
+#inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
 clinDir = "/srv/scratch/ccotter/lab_and_clinical_data/Cleaned/" #mitra and nandi
-outDir = "/users/ccotter/python_out/" #mitra and nandi
+#outDir = "/users/ccotter/python_out/" #mitra and nandi
 boutDir = "/srv/scratch/ccotter/py_out/"
 
 VERBOSE = True
@@ -684,7 +684,7 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
     else:
         libnames = resultsDF['Unnamed: 0']
     
-    plt.figure(figsize=(6.3,6.3)) #(6.5,6.5) for dissertation; 
+    plt.figure(figsize=(6,6)) #(6.5,6.5) for dissertation; 
     plt.grid(b=True, which='both', axis='both',color='0.3',linestyle='-')
     for counter, libname in enumerate(libnames):
         pred_prob = predDF[libname]
@@ -707,10 +707,10 @@ def plot_ROC(y, predDF, resultsDF, figName, outDir, ran_Analysis):
     plt.ylabel('True positive rate', color='white',size=16)
     plt.xticks(color='white',size=14)
     plt.yticks(color='white',size=14)
-    leg = plt.legend(loc='best')
+    leg = plt.legend(loc='best', prop={'size':16})
     for text in leg.get_texts():
         plt.setp(text, color='white', size=14)
-    #plt.title('ROC curves for distinguishing OFI from dengue')
+    plt.title('ROC curves for predicting servere dengue', size=16)
     #note: .png can be done with transparent background while .eps cannot
     plt.savefig(outDir + 'C_' + figName + '.png', dpi=1200, transparent=True)
     #plt.show()
@@ -1034,8 +1034,8 @@ def main():
         only_VIM2 = False # true if just want to plot VIM2 (and not other VIMs)
 
         ## Choose outcome variable ##
-        outcome = "is.DEN"  
-        #outcome = "is.DHF_DSS"
+        #outcome = "is.DEN"  
+        outcome = "is.DHF_DSS"
 
         ## Choose whether to exclude OFI patients ##
         NoOFI = False #only applies to is.DHF_DSS analyses
@@ -1191,7 +1191,7 @@ def main():
         #SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
         #predDF.insert(loc=len(predDF.columns), column='Super Learner', value=SL_preds)
         #resultsDF = get_performance_vals(y, SL_preds, "Super Learner", 
-        #                                cv_gen, 0.95, resultsDF)
+        #                                cv_geen, 0.95, resultsDF)
         log_statement("\ncvSL execution time: {} minutes".format(
             (time.time() - start_time_cvSL)/60. ) ) 
         # Results for each algorith in library
@@ -1205,14 +1205,20 @@ def main():
                     outDir, print_results=True)
     else:
         print "reading from results files"
-        predDF = pd.read_csv(outDir + 'P_' + outName + '.txt', sep=',') 
-        resultsDF = pd.read_csv(outDir + 'R_' + outName + '.txt', sep=',') 
+        if True==True:
+            alg_list = ['CART', 'Centroids', 'LDA+shrinkage', 'Gradient Boost', 'AdaBoost', 'Random Forests', 'N.Neighbor', 'Logit-L1', 'Logit-L2', 'SVM-L2','Super Learner']
+            rDF = pd.read_csv(outDir + 'R_' + outName + '.txt', sep=",")
+            resultsDF = rDF[rDF['Unnamed: 0'].isin(alg_list)]
+            predDF = pd.read_csv(outDir + 'P_' + outName + '.txt', sep=',')
+        else:
+            predDF = pd.read_csv(outDir + 'P_' + outName + '.txt', sep=',') 
+            resultsDF = pd.read_csv(outDir + 'R_' + outName + '.txt', sep=',') 
 
     if plot_MainAnalysis == True:
         ## Make bargraphs of cvAUC results ##
-        plot_title = comparison_groups+predictor_desc+restrictions
-        plot_cvAUC(resultsDF, plot_title="", figName=outName, 
-                    outDir=outDir, ran_Analysis=run_MainAnalysis)
+        #plot_title = comparison_groups+predictor_desc+restrictions
+        #plot_cvAUC(resultsDF, plot_title="", figName=outName, 
+        #            outDir=outDir, ran_Analysis=run_MainAnalysis)
         ## ROC curve plots ##
         plot_ROC(y, predDF, resultsDF, outName, outDir, run_MainAnalysis)
 
