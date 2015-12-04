@@ -6,6 +6,71 @@
 ### data for analysis without code unused for analysis
 ###############################################################################
 
+###############################################################################
+######### investigate possible confounding from sample collection date ########
+###############################################################################
+
+#create season indicator
+season_cat <- function(x) {
+  cy = as.numeric(format(x, format="%Y"))
+  month = as.numeric(format(x, format="%m"))
+  #season name is the year in which season ends (so 2008-2009 flu season will be labeled 2009)
+  if(month < 7){
+    season = cy
+  } 
+  else{
+    season = cy+1
+  }
+  return(season)
+}
+
+clinical_D1_clean$month = as.numeric(format(clinical_D1_clean$FTM_date, format="%m"))
+
+### for Natalias batch 1 patients ###
+load(paste(outputsDir,"clinical_D1_clean.RData", sep="")) #loads clinical_D1_clean
+#make R treat date values properly so sorting etc. will work as desired
+clinical_D1_clean$FTM_date = as.POSIXct(as.character(clinical_D1_clean$FTM), format="%Y-%m-%d") 
+summary(clinical_D1_clean$FTM_date) 
+clinical_D1_clean$FTM_yr = as.numeric(format(clinical_D1_clean$FTM_date, format="%Y"))
+clinical_D1_clean$season <- sapply(clinical_D1_clean$FTM_date, season_cat)
+View(clinical_D1_clean[,c("FTM","FTM_date","FTM_yr","DxFinal3cat","code", "season")])
+#see if we have some balance in terms of diagnoses across years
+table(clinical_D1_clean$season, clinical_D1_clean$DxFinal3cat)
+#sadly, all 29 ND obs are from 2010 and 2011
+#meanwhile, all but 1 DF obs (and all DFH_DSS obs) are from 2009 or earlier.
+  #might be interesting to see how well we predict that one DF sample that is from 2010...
+  #turns out this obs (code 1000) behaves much more like the ND samples.  may have been mislabeled.
+#so we will not know whether LCMS info predicts sample year or diagnosis for DF vs. ND
+  #(though ND/DF versus DHF/DSS is not completely conflated by collection year)
+
+### for Kristofs batch 1 patients ###
+load(paste(outputsDir,"clinical_full_clean.RData", sep="")) #loads clinical_full_clean
+RP_batch1 = read.csv(paste(clinical_inputsDir,"RP_batch1_sample_merge_info.csv", sep=""), header=TRUE, nrows=1000)
+names(RP_batch1)[names(RP_batch1)==c("Code")] = c("code") #rename column
+RP_batch1$code = apply(X=RP_batch1, MARGIN = 1, FUN=fcode, var="code")
+clinical_RPb1_clean <- merge(clinical_full_clean, RP_batch1, by=c("code","Study"), all=F)
+#make R treat date values properly so sorting etc. will work as desired
+clinical_RPb1_clean$FTM_date = as.POSIXct(as.character(clinical_RPb1_clean$FTM), format="%Y-%m-%d") 
+summary(clinical_RPb1_clean$FTM_date) 
+clinical_RPb1_clean$FTM_yr = as.numeric(format(clinical_RPb1_clean$FTM_date, format="%Y"))
+clinical_RPb1_clean$season <- sapply(clinical_RPb1_clean$FTM_date, season_cat)
+clinical_RPb1_clean <- clinical_RPb1_clean[order(clinical_RPb1_clean$FTM_date),] #sort
+summary(clinical_RPb1_clean$FTM_yr)
+View(clinical_RPb1_clean[,c("FTM","FTM_date","FTM_yr","DxFinal3cat","code","type", "season")])
+#see if we have some balance in terms of diagnoses across years
+table(clinical_RPb1_clean$season, clinical_RPb1_clean$DxFinal3cat)
+#DENV patients are nearly all from the 2008-2009 season and earlier
+#ND are nearly all from the 2009-2010 season and later (with exception of code 273, which Chris showed appears like DENV)
+
+# This should contain "first 24 hr" data from the first batch and from some of the 3rd/4th batches
+hospit_raw24 = read.delim(paste(clinical_inputsDir,"Clinical data_hospital study.txt", sep=""), header=TRUE, nrows=2000) #1650 obs
+hospit_raw24[hospit_raw24$code==1000,] #classified as positive
+hospit_raw24[hospit_raw24$code==273,] #no DENV but has DSS symptoms.  interesting.
+
+clinical_full_clean[clinical_full_clean$code %in% c("ID1000","ID0273"), ]
+
+###############################################################################
+
 HospitD_cleaning = function(df, clinic_varsD, clinic_varsH_char, YesNo_varsH_char){  
   
   df$temp = NA
