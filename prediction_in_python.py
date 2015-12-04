@@ -57,12 +57,12 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
-outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
-#inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
-clinDir = "/srv/scratch/ccotter/lab_and_clinical_data/Cleaned/" #mitra and nandi
-#outDir = "/users/ccotter/python_out/" #mitra and nandi
-boutDir = "/srv/scratch/ccotter/py_out/"
+#inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
+#outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
+
+inputsDir = "/srv/scratch/ccotter/intermediate_data/" #Nandi
+outDir = "/users/ccotter/python_out/" #Nandi (contains small output files)
+boutDir = "/srv/scratch/ccotter/py_out/" #Nandi (contains cleaned LCMS data)
 
 VERBOSE = True
 def log_statement(statement):
@@ -444,6 +444,10 @@ def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample,
         df = df[df.Study=="Cohort"] #limit to only cohort patients
     print "Number of rows in dataframe: " , df.shape[0], "\n"
     #print "Column names in dataframe: " , list(df.columns.values), "\n" 
+
+    #useful for trouble-shooting
+    #print df[["code","Study","Cod_Nin",outcome]]
+    #df[["code","Study","Cod_Nin",outcome]].to_csv(outDir+ 'patients_and_dx.txt', sep=",") 
 
     return df, all_predictors
 
@@ -957,6 +961,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Predict dengue.')
     
     parser.add_argument('--run_MainAnalysis', action='store_true', default=False)
+    parser.add_argument('--run_SL', action='store_true', default=False)
     parser.add_argument('--plot_MainAnalysis', action='store_true', default=False)
     parser.add_argument('--run_testdata', action='store_true', default=False)
     parser.add_argument('--run_VIM', action='store_true', default=False)
@@ -992,7 +997,7 @@ def parse_arguments():
 
     args = parser.parse_args()
 
-    return (args.run_MainAnalysis, args.plot_MainAnalysis, args.run_testdata, 
+    return (args.run_MainAnalysis, args.run_SL, args.plot_MainAnalysis, args.run_testdata, 
             args.run_VIM, args.run_VIM1, args.run_VIM2,
             args.outcome,
             args.NoOFI, args.NoInitialDHF, 
@@ -1008,12 +1013,12 @@ def main():
     ###########################################################################
     ###################### Choices, choices, choices ##########################
     
-    params_from_commandline = False
-    # can run via "run_prediction_in_python.py" -- loops thru parameter lists
+    #set to true if running "run_prediction_in_python.py loops thru parameter lists
+    params_from_commandline = True 
 
     if params_from_commandline==True:
         ## Parse parameters provided at command-line level
-        (run_MainAnalysis, plot_MainAnalysis, run_testdata, run_VIM, run_VIM1, run_VIM2,
+        (run_MainAnalysis, run_SL, plot_MainAnalysis, run_testdata, run_VIM, run_VIM1, run_VIM2,
          outcome, NoOFI, NoInitialDHF, patient_sample, testSample, 
          include_clinvars, include_clinvars, include_LCMSvars, onlyLCMSpatients,
          predictor_desc,
@@ -1023,7 +1028,8 @@ def main():
 
     else:
         ## Choose which parts of code to run ##
-        run_MainAnalysis = False  # if false, will expect to get results from file
+        run_MainAnalysis = True  # if false, will expect to get results from file
+        run_SL = True # if false, can still run algorithms in library, but not SL
         plot_MainAnalysis = True  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
         #determine which variable importance code to run
@@ -1034,8 +1040,8 @@ def main():
         only_VIM2 = False # true if just want to plot VIM2 (and not other VIMs)
 
         ## Choose outcome variable ##
-        #outcome = "is.DEN"  
-        outcome = "is.DHF_DSS"
+        outcome = "is.DEN"  
+        #outcome = "is.DHF_DSS"
 
         ## Choose whether to exclude OFI patients ##
         NoOFI = False #only applies to is.DHF_DSS analyses
@@ -1052,11 +1058,11 @@ def main():
         testSample = "hospital" #options: "cohort" or "hospital"
 
         ## Choose whether to include clinical variables and/or LCMS features ##
-        include_clinvars = True #true to include clinical variables
-        include_LCMSvars = False #true to include LCMS features
+        include_clinvars = False #true to include clinical variables
+        include_LCMSvars = True #true to include LCMS features
 
         ## Choose whether to restrict to only LCMS patients ##
-        onlyLCMSpatients = False #true to include only patients with LCMS data
+        onlyLCMSpatients = True #true to include only patients with LCMS data
         #eventually, instead have trainObs="all"/"LCMSonly" and testObs="all"/"LCMSonly"        
 
         ## Choose list of clinical variables to use in prediction 
@@ -1077,7 +1083,8 @@ def main():
 
         ## Choose input LCMS data ##
         #inLCMSData = "NPbins50x50" #prepared in extract_LCMS_features.py
-        inLCMSData = "RPbins50x50" #prepared in extract_LCMS_features.py
+        #inLCMSData = "RPbins50x50" #prepared in extract_LCMS_features.py
+        inLCMSData = "MassHuntNP" #prepared in prepare_MassHunter_data.py
         
         ## Use a tiny SL library for testing purposes
         testlib = False #false if you want to run normally
@@ -1117,7 +1124,6 @@ def main():
     #if we are restricting to LCMS patients we will not want to restrict on hospital/cohort
     if include_LCMSvars==True or onlyLCMSpatients==True:
         patient_sample=="all"
-        print "AAAAAAAAHHHHHHHHHH!!!!!!!!!!!!!"
 
     ## Suffix to indicate use of imputation dummies
     if imp_dums_only==True:
@@ -1187,11 +1193,12 @@ def main():
         resultsDF = pd.DataFrame() #empty df to hold performance measures
         # Super Learner
         start_time_cvSL = time.time()
-        #sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-        #SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
-        #predDF.insert(loc=len(predDF.columns), column='Super Learner', value=SL_preds)
-        #resultsDF = get_performance_vals(y, SL_preds, "Super Learner", 
-        #                                cv_geen, 0.95, resultsDF)
+        if run_SL == True:
+            sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+            SL_preds = cross_val_predict_proba(sl, X, y, cv_gen)
+            predDF.insert(loc=len(predDF.columns), column='Super Learner', value=SL_preds)
+            resultsDF = get_performance_vals(y, SL_preds, "Super Learner", 
+                                        cv_gen, 0.95, resultsDF)
         log_statement("\ncvSL execution time: {} minutes".format(
             (time.time() - start_time_cvSL)/60. ) ) 
         # Results for each algorith in library

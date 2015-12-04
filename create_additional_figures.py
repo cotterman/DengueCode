@@ -55,20 +55,19 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-inputsDir = "/home/ccotter/dengue_data_and_results_local/intermediate_data/" #home PC
-outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
-#inputsDir = "/srv/scratch/ccotter/intermediate_data/" #mitra and nandi
-#outDir = "/users/ccotter/python_out/" #mitra and nandi
+#outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
+outDir = "/users/ccotter/python_out/" #nandi
 
 GraphInfo = namedtuple("GraphInfo", 
     ["patient_sample","comparison_groups", "FileNamePrefix", "NoInitialDHF", "NoOFI"])
 
 
 def get_colors():
+    """Return list of colors, defined by RGB values.
+       
     """
-        Return list of colors, defined by RGB values.
-        Eventually may want to allow various parameters.
-    """
+    #Eventually may want to allow various parameters.
+    
     # These are the "Tableau 20" colors as RGB.  
         # They are ordered such that the first 10 will give you the tableau10 pallete
     tableau20 = [(31, 119, 180), (255, 127, 14), (44, 160, 44), (214, 39, 40),
@@ -104,16 +103,30 @@ def parse_args(patient_sample, outcome, NoOFI, NoInitialDHF):
     return GraphInfo(patient_sample, comparison_groups, FileNamePrefix, NoInitialDHF, NoOFI)
 
 
-def create_LCMS_barplot(graph_info):
-    """Bar plot with bars grouped by predictor set and colors indicating LCMS run (RP/NP) 
+def create_LCMS_barplot(ginfo, LCMScompare):
+    """Bar plot with bars grouped by predictor set and colors indicating LCMS run  
 
+        LCMScompare = "NPbins_v_RPbins" to compare NP vs. RP using binned data
+        LCMScompare = "NPbins_v_MassHuntNP" to comapre NP binned vs. NP mass hunter
     """
-    # LCMS data to loop through
-    inLCMSData_list = ['NPbins50x50', 'RPbins50x50']
-    # labels to appear in graph legend
-    inLCMSData_desc = ['Normal phase, 50x50 intensity grid',
-                       'Reverse phase, 50x50 intensity grid']  
-    figName = ginfo.FileNamePrefix + '_LCMScompare'
+
+    if LCMScompare == "NPbins_v_RPbins":
+        # LCMS data to loop through
+        inLCMSData_list = ['NPbins50x50', 'RPbins50x50']
+        # labels to appear in graph legend
+        inLCMSData_desc = ['Normal phase, 50x50 intensity grid',
+                       'Reverse phase, 50x50 intensity grid'] 
+        #xkcd colors
+        colors = ["light burgundy", "medium blue"] 
+    elif LCMScompare == "NPbins_v_MassHuntNP":
+        # LCMS data to loop through
+        inLCMSData_list = ['NPbins50x50', 'MassHuntNP']
+        # labels to appear in graph legend
+        inLCMSData_desc = ['Normal phase, 50x50 intensity grid',
+                       'Normal phase, Mass Hunter'] 
+        #xkcd colors
+        colors = ["light burgundy", "tangerine"] 
+    figName = ginfo.FileNamePrefix + '_' + LCMScompare
     #first name listed will appear closest to bottom of y-axis
     predcat_names = ['Clinical+LCMS','LCMS only','Clinical only'] 
     predictor_desc = "covarlist_all"
@@ -124,9 +137,8 @@ def create_LCMS_barplot(graph_info):
     #initial_pos = np.arange(len(predcat_names)*len(alg_list)+len(predcat_names))*(
     #    len(inLCMSData_list)+1)+len(inLCMSData_list)+1
     bar_width = 1
-    colors = ["medium blue","light burgundy"]
     mycolors = sns.xkcd_palette(colors)
-    #plt.figure(figsize=(4,6))
+    plt.figure(figsize=(6.7,8))
     #cycle through each inLCMSData value
     plots = []
     for counter, inLCMSData in enumerate(inLCMSData_list):
@@ -158,11 +170,11 @@ def create_LCMS_barplot(graph_info):
                         align='center', alpha=1, 
                         color=mycolors[counter], label=inLCMSData_desc[counter])
         #add numeric values to plot
-        xpos = np.array(resultsDF['ci_low']) -.02
+        xpos = np.array(resultsDF['ci_low']) -.05
         ypos = ypositions - .3
         mytext = ["%.2f" % x for x in measurements]    
         for place, text in enumerate(mytext):
-            plt.text(xpos[place], ypos[place], text, color="white")
+            plt.text(xpos[place], ypos[place], text, color="white", fontsize=12)
         plots.append(plot)
 
     #add labels for algorithms
@@ -173,15 +185,15 @@ def create_LCMS_barplot(graph_info):
     stepsize = len(predcat_names)*len(alg_list)
     for myc, pred_name in enumerate(predcat_names):
         ypos = stepsize*(myc+1) + .6
-        plt.text(.5, ypos, pred_name, color="black")
+        plt.text(.5, ypos, pred_name, color="black", fontsize=14)
 
     plt.xlabel = "cvAUC"
     plt.xlim(.5, 1)
     plt.ylim(0,max(initial_pos)+4)
     print "counter: " , counter
-    plt.legend()
+    plt.legend(ncol=1)
     plt.tight_layout()
-    plt.savefig(outDir + figName + '.png', dpi=1200)
+    plt.savefig(outDir + figName + '.eps', dpi=1200)
     plt.close() 
 
 
@@ -359,8 +371,8 @@ def create_testData_barplot(ginfo):
 def main():
 
     ## Choose outcome variable 
-    outcome = "is.DEN"  
-    #outcome = "is.DHF_DSS"
+    #outcome = "is.DEN"  
+    outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients 
     NoOFI = True #only applicable for is.DHF_DSS
@@ -376,17 +388,18 @@ def main():
     ## Obtain graph title, filename prefix, etc.
     ginfo = parse_args(patient_sample, outcome, NoOFI, NoInitialDHF)
 
-    ## Bar plot with bars grouped by predictor set and colors indicating LCMS run (RP/NP) 
-    create_LCMS_barplot(ginfo)   
+    ## Bar plot with bars grouped by predictor set and colors indicating LCMS run 
+    LCMScompare = "NPbins_v_RPbins" #options: "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
+    create_LCMS_barplot(ginfo, LCMScompare)   
 
     ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors sets 
-    create_predSets_barplot(ginfo)
+    #create_predSets_barplot(ginfo)
 
     ## Bar plot with bars grouped by algorithm and colors indicating imputation dummy inclusion 
-    create_impDum_barplot(ginfo)  
+    #create_impDum_barplot(ginfo)  
 
     ## Bar plot with bars grouped by algorithm and colors indicating patient sample 
-    create_testData_barplot(ginfo)
+    #create_testData_barplot(ginfo)
 
 if __name__ == '__main__':
     main()

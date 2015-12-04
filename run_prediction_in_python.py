@@ -8,19 +8,20 @@ import subprocess
     #default for all boolean flags is False (ex: '' means False)
     #specifying flag turns indicators to true (ex: '--run_MainAnalysis')
 run_MainAnalysis = '--run_MainAnalysis'
+run_SL = '--run_SL'
 plot_MainAnalysis = '' #'--plot_MainAnalysis' 
-NoInitialDHF = '--NoInitialDHF' #should generally be true (for prediction)
+NoInitialDHF = '--NoInitialDHF' #should generally be true - applies only to is.DHF_DSS analysis
 onlyLCMSpatients = '--onlyLCMSpatients'
 #Loop thru parameters options
 ps = []
 for outcome in ['is.DHF_DSS']:
     if outcome=='is.DHF_DSS':
-        NoOFI_list = ['--NoOFI',''] #2 options for is.DHF_DSS
+        NoOFI_list = [''] #options for is.DHF_DSS: '--NoOFI',''
     else:
         NoOFI_list = [''] #the only sensible value for is.DEN analysis
     for NoOFI in NoOFI_list:
 
-        for inLCMSData in ["RPbins50x50", "NPbins50x50"]:
+        for inLCMSData in ["NPbins50x50", "MassHuntNP", "RPbins50x50"]:
 
             predictor_desc  = "covarlist_all"
             #for predictor_desc in ["covarlist_all","covarlist_noUltraX",
@@ -40,7 +41,7 @@ for outcome in ['is.DHF_DSS']:
                 #for imp_dums_only in imp_dums_only_list:
 
                     #string args together
-                    args = " ".join([run_MainAnalysis, plot_MainAnalysis, 
+                    args = " ".join([run_MainAnalysis, run_SL, plot_MainAnalysis, 
                             include_clinvars, include_LCMSvars, onlyLCMSpatients,
                             NoOFI, NoInitialDHF, include_imp_dums, imp_dums_only,
                             '--outcome', outcome, '--inLCMSData', inLCMSData,
@@ -50,8 +51,12 @@ for outcome in ['is.DHF_DSS']:
                         #Note: processes will be run in parallel
                         #beware of overloading machine with too many processes
                             #ex: n_jobs (in grid search) also spawns jobs 
-                    p = subprocess.Popen("python prediction_in_python.py " + args, shell=True)
-                    ps.append(p)
+                    #does not make sense to include no predictors
+                    if include_clinvars == '' and include_LCMSvars == '':
+                        continue
+                    else:
+                        p = subprocess.Popen("python prediction_in_python.py " + args, shell=True)
+                        ps.append(p)
 
 #wait till each process is finished before exiting
 for p in ps: p.wait()

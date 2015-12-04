@@ -9,7 +9,8 @@
 #################### Clean the abundance data #################################
 ###############################################################################
 
-#for Nicaragua Serum samples
+#for Nicaragua Serum samples.  Note that the first batch data seems to be of higher quality.  
+  #Might not want to publish results from batches 3 or 4 ("run 2") 
 respD1_filter50n = clean_LCMS(infile="LCMS_serum_Nica_50percent_first batch.txt", lcms_run=1, printme=TRUE) #88 samples
 respD1_filter10n = clean_LCMS(infile="LCMS_serum_Nica_10percent_first batch.txt", lcms_run=1, printme=TRUE)
 respD2_filter50n = clean_LCMS(infile="LCMS_serum_Nica_50percent_batches 3 and 4.txt", lcms_run=2, printme=TRUE) #83 samples
