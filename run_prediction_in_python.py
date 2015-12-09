@@ -10,18 +10,19 @@ import subprocess
 run_MainAnalysis = '--run_MainAnalysis'
 run_SL = '--run_SL'
 plot_MainAnalysis = '' #'--plot_MainAnalysis' 
-NoInitialDHF = '--NoInitialDHF' #should generally be true - applies only to is.DHF_DSS analysis
+NoInitialDHF = '' #should generally be true - applies only to is.DHF_DSS analysis
 onlyLCMSpatients = '--onlyLCMSpatients'
 #Loop thru parameters options
 ps = []
-for outcome in ['is.DHF_DSS']:
+for outcome in ['is.DEN']:
     if outcome=='is.DHF_DSS':
         NoOFI_list = [''] #options for is.DHF_DSS: '--NoOFI',''
     else:
         NoOFI_list = [''] #the only sensible value for is.DEN analysis
     for NoOFI in NoOFI_list:
 
-        for inLCMSData in ["NPbins50x50", "MassHuntNP", "RPbins50x50"]:
+        #for inLCMSData in ["NPbins50x50", "MassHuntNP", "RPbins50x50"]:
+        for inLCMSData in ["SalivaMH", "UrineMH"]:
 
             predictor_desc  = "covarlist_all"
             #for predictor_desc in ["covarlist_all","covarlist_noUltraX",

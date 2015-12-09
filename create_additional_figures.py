@@ -118,6 +118,7 @@ def create_LCMS_barplot(ginfo, LCMScompare):
                        'Reverse phase, 50x50 intensity grid'] 
         #xkcd colors
         colors = ["light burgundy", "medium blue"] 
+
     elif LCMScompare == "NPbins_v_MassHuntNP":
         # LCMS data to loop through
         inLCMSData_list = ['NPbins50x50', 'MassHuntNP']
@@ -126,12 +127,21 @@ def create_LCMS_barplot(ginfo, LCMScompare):
                        'Normal phase, Mass Hunter'] 
         #xkcd colors
         colors = ["light burgundy", "tangerine"] 
+
+    elif LCMScompare == "NonInvasives":
+        # LCMS data to loop through
+        inLCMSData_list = ['SalivaMH','UrineMH']
+        # labels to appear in graph legend
+        inLCMSData_desc = ['Saliva','Urine'] 
+        #xkcd colors
+        colors = ["dark lilac","teal green"]
+
     figName = ginfo.FileNamePrefix + '_' + LCMScompare
     #first name listed will appear closest to bottom of y-axis
     predcat_names = ['Clinical+LCMS','LCMS only','Clinical only'] 
     predictor_desc = "covarlist_all"
     #will appear in alphabetical order
-    alg_list = ['Gradient Boost','AdaBoost','Random Forests','Super Learner']
+    alg_list = ['Gradient Boost','AdaBoost','Random Forests', 'Super Learner'] #
     initial_pos = np.arange(len(predcat_names)*len(alg_list))*(
         len(inLCMSData_list)+1)+len(inLCMSData_list)+1
     #initial_pos = np.arange(len(predcat_names)*len(alg_list)+len(predcat_names))*(
@@ -161,7 +171,8 @@ def create_LCMS_barplot(ginfo, LCMScompare):
         z = stats.norm.ppf(.95)
         SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
                ( np.array(resultsDF['ci_up']) - np.array(resultsDF['cvAUC']) )/z ]
-        ypositions = initial_pos - counter  
+        ypositions = initial_pos - counter 
+        print "tablename: " , tableName 
         print "resultsDF: " , resultsDF
         print "measurements: " , measurements
         print "ypos: " , ypositions
@@ -371,25 +382,25 @@ def create_testData_barplot(ginfo):
 def main():
 
     ## Choose outcome variable 
-    #outcome = "is.DEN"  
-    outcome = "is.DHF_DSS"
+    outcome = "is.DEN"  
+    #outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients 
-    NoOFI = True #only applicable for is.DHF_DSS
+    NoOFI = False #only applicable for is.DHF_DSS
 
     ## Choose whether to exclude samples with initial DHF/DSS diagnosis 
     NoInitialDHF = True #only applicable for is.DHF_DSS
 
     ## Choose patient sample 
-    #patient_sample = "all"
+    patient_sample = "all"
     #patient_sample = "cohort_only"
-    patient_sample = "hospital_only"
+    #patient_sample = "hospital_only"
 
     ## Obtain graph title, filename prefix, etc.
     ginfo = parse_args(patient_sample, outcome, NoOFI, NoInitialDHF)
 
     ## Bar plot with bars grouped by predictor set and colors indicating LCMS run 
-    LCMScompare = "NPbins_v_RPbins" #options: "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
+    LCMScompare = "NonInvasives" #"NonInvasives", "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
     create_LCMS_barplot(ginfo, LCMScompare)   
 
     ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors sets 

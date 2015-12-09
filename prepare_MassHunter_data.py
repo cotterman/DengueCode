@@ -23,23 +23,30 @@ def parse_arguments():
 def main():
     
     inDir, outDir = parse_arguments() #filenames will be a list
-    inFname = "comboD1_filter50n_wImpRF1"
-    outFname = "NP_MassHunt" #name of numpy array to create
-        
+    sample = 'D5' #D1 is serum, D3 is saliva, D5 is urine (all normal phase)
+    if sample == 'D1':
+        inFname = "comboD1_filter50n_wImpRF1"
+        outFname = "MassHuntNP" #name of pickled data frame to create
+    elif sample == 'D3':
+        inFname = "comboD3_filter50n_wImpRF1"
+        outFname = "SalivaMH" #name of pickled data frame to create
+    elif sample == 'D5':
+        inFname = "comboD5_filter50n_wImpRF1"
+        outFname = "UrineMH" #name of pickled data frame to create
+
     # prepare data so it will properly merge with clinical data on code, Study, Cod_Nin
     NP_MH = pd.read_csv(inDir + inFname + '.txt', sep='\t')
     #print "Column names: " , list(NP_MH)
     print "Number of obs and of vars: " , NP_MH.shape
     # keep only LCMS variables and vars for merging
-    keepervars = ["code","Study"]
+    keepervars = ["code","Study","Cod_Nin"]
     for var in NP_MH.columns.values:
         y = re.findall("MZ_.*", var)
         assert len(y) in (0,1)
         if len(y)==1: keepervars.append(y[0])
     print "Number of MZ values: " , len(keepervars) - 2
     NP_MH = NP_MH[keepervars]
-    NP_MH.insert(2, 'Cod_Nin', np.nan) #need Cod_Nin since it will be expected later on   
-
+      
     # save for later use (employ pd.read_pickle() to load)
     print "Creating pickled data frame"
     NP_MH.to_pickle(os.path.join(outDir, outFname)) 
