@@ -417,8 +417,8 @@ def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample,
     
     #restrict to non-LCMS patients if desired
     if noLCMSpatients==True:
-        common = pd.merge(df, LCMS, on=('code','Study','Cod_Nin'))
-        df[(~df.code.isin(common.code))&(~df.Study.isin(common.Study))&(~df.Cod_Nin.isin(common.Cod_Nin))]
+        LCMS = pd.read_pickle(boutDir+inLCMSData)
+        df[(~df.code.isin(LCMS.code))&(~df.Study.isin(LCMS.Study))&(~df.Cod_Nin.isin(LCMS.Cod_Nin))]
 
     #add in LCMS data if desired 
     if include_LCMSvars==True or onlyLCMSpatients==True:
@@ -1229,40 +1229,89 @@ def main():
     ## Choose subset of LCMS features ##
     if run_BestSubset == True:
 
-        def subset_data(X, y, patients, variables):
-            """
-                patients: "noSerumLCMS" or "onlySerumLCMS"
-                variables: "clinical"
-            """
-            if patients == "noSerumLCMS":
-                df = df[df.serum!=1]
-            elif patients == "onlySerumLCMS":
-                df = df[df.serum==1]
-            newX = 
-            newY = 
-            return newX, newY
-
-        predDF = pd.DataFrame() #this will hold predicted probs for all runs here
+        preds_Sub = pd.DataFrame() #this will hold predicted probs for all runs here
 
         #predictions for LCMS patients using clin data fit to all non-LCMS hospit patients
             #no need to keep track of predictor indices and whatnot
-        def predict_for_LCMSpatients_allClin(X, y, ):
+        def predict_for_LCMSpatients_allClin(inputsDir, inClinData, inLCMSData,
+                    NoInitialDHF, patient_sample, NoOFI, outcome, predictors_prelim, 
+                    include_study_dum, include_imp_dums, imp_dums_only, std_vars):
+
             sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
-            X_noLCMS, y_noLCMS = subset_data(X, y, patients = "noSerumLCMS", variables = "clinical")
+
+            #fit SL with all non-LCMS observations
+            onlyLCMSpatients = False
+            noLCMSpatients = True
+            include_clinvars = True
+            include_LCMSvars = False
+            df_noLCMS, predictors_clin = get_data(inputsDir, inClinData, inLCMSData,
+                    NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
+                    outcome, predictors_prelim, include_study_dum, include_imp_dums, imp_dums_only, 
+                    include_clinvars, include_LCMSvars, std_vars)
+            X_noLCMS = df_noLCMS[predictors_clin].astype(float).values
+            print "type and X_noLCMS.shape: " , type(X_noLCMS), X_noLCMS.shape
+            y_noLCMS = df_noLCMS[outcome].astype(int).values 
+            print "type and y_noLCMS.shape: " , type(y_noLCMS), y_noLCMS.shape
             clinSL = sl.fit(X_noLCMS, y_noLCMS)
-            X_withLCMS, y_withLCMS = subset_data(X, y, patients = "onlySerumLCMS", variables = "all")
-            SL_preds_clin = clinSL.predict_proba(X_withLCMS)
+
+            #get predicted probs for LCMS data using fitted model from above
+               #no need to keep track of predictor indices and whatnot - using only clin data 
+            onlyLCMSpatients = True
+            noLCMSpatients = False
+            include_clinvars = True
+            include_LCMSvars = False
+            df_onlyLCMS, predictors_clin = get_data(inputsDir, inClinData, inLCMSData,
+                    NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
+                    outcome, predictors_prelim, include_study_dum, include_imp_dums, imp_dums_only, 
+                    include_clinvars, include_LCMSvars, standardize=std_vars)
+            X_onlyLCMS = df_onlyLCMS[predictors_clin].astype(float).values
+            print "type and X_noLCMS.shape: " , type(X_onlyLCMS), X_onlyLCMS.shape
+            y_onlyLCMS = df_onlyLCMS[outcome].astype(int).values 
+            print "type and y_noLCMS.shape: " , type(y_onlyLCMS), y_onlyLCMS.shape
+            SL_preds_clin = clinSL.predict_proba(X_onlyLCMS)
+
             return SL_preds_clin
 
-        #predictions for LCMS patients using SL_preds_clin plus topJ LCMS features
-        X_withLCMS, y_withLCMS = subset_data(X, y, patients = "onlySerumLCMS", variables = "all")
-        topJ_indices = get_topJ(X_withLCMS, y_withLCMS, predictors)     
+        SL_preds_clin = predict_for_LCMSpatients_allClin(inputsDir, inClinData, inLCMSData,
+                    NoInitialDHF, patient_sample, NoOFI, outcome, predictors_prelim, 
+                    include_study_dum, include_imp_dums, imp_dums_only, std_vars)
+
+        print "SL_preds_clin: " , type(SL_preds_clin), SL_preds_clin
+
+        #predictions for LCMS patients using topJ LCMS features plus 
+            #(a) clinical vars, (b) SL_preds_clin, (c) both clin vars and SL_preds_clin
+            #select topJ LCMS features using covars planned to use in prediction
+        #obtain data for LCMS obs with full predictor set
+        onlyLCMSpatients = True
+        noLCMSpatients = False
+        include_clinvars = True
+        include_LCMSvars = True
+        df_allLCMS, predictors_all = get_data(inputsDir, inClinData, inLCMSData,
+                NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
+                outcome, predictors_prelim, include_study_dum, include_imp_dums, imp_dums_only, 
+                include_clinvars, include_LCMSvars, standardize=std_vars)
+        #add SL_preds_clin as a covariate if desired
+        if subsetMethod1 == True:
+            df_allLCMS.append(SL_preds_clin, name="SL_preds_clin")
+            predictors_plus = predictors_all+"SL_preds_clin"
+        #use SL_preds_clin and no other clinical covariates if desired
+
+        #turn pandas dataframe into data arrays 
+        X_allLCMS = df_allLCMS[predictors_all].astype(float).values
+        print "type and X_allLCMS.shape: " , type(X_allLCMS), X_allLCMS.shape
+        y_allLCMS = df_allLCMS[outcome].astype(int).values 
+        print "type and y_allLCMS.shape: " , type(y_allLCMS), y_allLCMS.shape
+
+        #obtain topJ LCMS predictors using data created above
+        topJ_indices = get_topJ(X_allLCMS, y_allLCMS, predictors_all)     
+        #obtain predictions using same data fed to get_topJ, but with only topJ LCMS vars
         sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
         cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
         for i in xrange(10):
             indices_to_use = clin_indices + topJ_indices[:i]
             SL_preds_topJ = cross_val_predict_proba(sl, X[indices_to_use], y, cv_gen)
             predDF.insert(SL_preds_topJ)
+
         return predDF
 
         
