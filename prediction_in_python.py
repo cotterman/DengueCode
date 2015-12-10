@@ -439,6 +439,7 @@ def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample,
     if (NoOFI==True):
         df = df[df.DENV=="Positivo"] #limit to only DENV positive patients
     if (patient_sample == "hospital_only"):
+        print "Run for only hospital patients"
         df = df[df.Study=="Hospital"] #limit to only hospital patients
     if (patient_sample == "cohort_only"):
         df = df[df.Study=="Cohort"] #limit to only cohort patients
@@ -447,7 +448,7 @@ def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample,
 
     #useful for trouble-shooting
     #print df[["code","Study","Cod_Nin",outcome]]
-    #df[["code","Study","Cod_Nin",outcome]].to_csv(outDir+ 'patients_and_dx.txt', sep=",") 
+    df[["code","Study","Cod_Nin",outcome]].to_csv(outDir+ 'patients_and_dx.txt', sep=",") 
 
     return df, all_predictors
 
@@ -1014,7 +1015,7 @@ def main():
     ###################### Choices, choices, choices ##########################
     
     #set to true if running "run_prediction_in_python.py loops thru parameter lists
-    params_from_commandline = True 
+    params_from_commandline = False 
 
     if params_from_commandline==True:
         ## Parse parameters provided at command-line level
@@ -1030,7 +1031,7 @@ def main():
         ## Choose which parts of code to run ##
         run_MainAnalysis = True  # if false, will expect to get results from file
         run_SL = True # if false, can still run algorithms in library, but not SL
-        plot_MainAnalysis = True  # if true, will create figures for main analysis
+        plot_MainAnalysis = False  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
         #determine which variable importance code to run
         run_VIM = False  # if false, none of the VIM code will be run
@@ -1058,8 +1059,8 @@ def main():
         testSample = "hospital" #options: "cohort" or "hospital"
 
         ## Choose whether to include clinical variables and/or LCMS features ##
-        include_clinvars = False #true to include clinical variables
-        include_LCMSvars = True #true to include LCMS features
+        include_clinvars = True #true to include clinical variables
+        include_LCMSvars = False #true to include LCMS features
 
         ## Choose whether to restrict to only LCMS patients ##
         onlyLCMSpatients = True #true to include only patients with LCMS data
@@ -1083,9 +1084,11 @@ def main():
 
         ## Choose input LCMS data ##
         #inLCMSData = "NPbins50x50" #prepared in extract_LCMS_features.py
-        #inLCMSData = "RPbins50x50" #prepared in extract_LCMS_features.py
-        inLCMSData = "MassHuntNP" #prepared in prepare_MassHunter_data.py
-        
+        inLCMSData = "RPbins50x50" #prepared in extract_LCMS_features.py
+        #inLCMSData = "MassHuntNP" #prepared in prepare_MassHunter_data.py
+        #inLCMSData = "SalivaMH" #prepared in prepare_MassHunter_data.py 
+        #inLCMSData = "UrineMH" #prepared in prepare_MassHunter_data.py 
+
         ## Use a tiny SL library for testing purposes
         testlib = False #false if you want to run normally
      
@@ -1123,8 +1126,8 @@ def main():
         include_study_dum = False
     #if we are restricting to LCMS patients we will not want to restrict on hospital/cohort
     if include_LCMSvars==True or onlyLCMSpatients==True:
-        patient_sample=="all"
-
+        patient_sample = "all"
+        print "patient sample set to all"
     ## Suffix to indicate use of imputation dummies
     if imp_dums_only==True:
         FileNameSuffix = "_dumsOnly"
