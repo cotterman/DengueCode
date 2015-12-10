@@ -965,6 +965,7 @@ def parse_arguments():
     parser.add_argument('--run_SL', action='store_true', default=False)
     parser.add_argument('--plot_MainAnalysis', action='store_true', default=False)
     parser.add_argument('--run_testdata', action='store_true', default=False)
+    parser.add_argument('--run_BestSubset', action='store_true', default=False)
     parser.add_argument('--run_VIM', action='store_true', default=False)
     parser.add_argument('--run_VIM1', action='store_true', default=False)
     parser.add_argument('--forget_VIM1', action='store_true', default=False)
@@ -999,7 +1000,7 @@ def parse_arguments():
     args = parser.parse_args()
 
     return (args.run_MainAnalysis, args.run_SL, args.plot_MainAnalysis, args.run_testdata, 
-            args.run_VIM, args.run_VIM1, args.run_VIM2,
+            args.run_BestSubset, args.run_VIM, args.run_VIM1, args.run_VIM2,
             args.outcome,
             args.NoOFI, args.NoInitialDHF, 
             args.patient_sample, args.testSample, 
@@ -1019,7 +1020,8 @@ def main():
 
     if params_from_commandline==True:
         ## Parse parameters provided at command-line level
-        (run_MainAnalysis, run_SL, plot_MainAnalysis, run_testdata, run_VIM, run_VIM1, run_VIM2,
+        (run_MainAnalysis, run_SL, plot_MainAnalysis, run_testdata, 
+         run_BestSubset, run_VIM, run_VIM1, run_VIM2,
          outcome, NoOFI, NoInitialDHF, patient_sample, testSample, 
          include_clinvars, include_clinvars, include_LCMSvars, onlyLCMSpatients,
          predictor_desc,
@@ -1029,10 +1031,11 @@ def main():
 
     else:
         ## Choose which parts of code to run ##
-        run_MainAnalysis = True  # if false, will expect to get results from file
-        run_SL = True # if false, can still run algorithms in library, but not SL
+        run_MainAnalysis = False  # if false, will expect to get results from file
+        run_SL = False # if false, can still run algorithms in library, but not SL
         plot_MainAnalysis = False  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
+        run_BestSubset = True # true means to find best subset of LCMS features and run SL with them
         #determine which variable importance code to run
         run_VIM = False  # if false, none of the VIM code will be run
         forget_VIM1 = False # if true, will do VIM analysis and graphs without VIM1 output
@@ -1060,7 +1063,7 @@ def main():
 
         ## Choose whether to include clinical variables and/or LCMS features ##
         include_clinvars = True #true to include clinical variables
-        include_LCMSvars = False #true to include LCMS features
+        include_LCMSvars = True #true to include LCMS features
 
         ## Choose whether to restrict to only LCMS patients ##
         onlyLCMSpatients = True #true to include only patients with LCMS data
@@ -1084,8 +1087,8 @@ def main():
 
         ## Choose input LCMS data ##
         #inLCMSData = "NPbins50x50" #prepared in extract_LCMS_features.py
-        inLCMSData = "RPbins50x50" #prepared in extract_LCMS_features.py
-        #inLCMSData = "MassHuntNP" #prepared in prepare_MassHunter_data.py
+        #inLCMSData = "RPbins50x50" #prepared in extract_LCMS_features.py
+        inLCMSData = "MassHuntNP" #prepared in prepare_MassHunter_data.py
         #inLCMSData = "SalivaMH" #prepared in prepare_MassHunter_data.py 
         #inLCMSData = "UrineMH" #prepared in prepare_MassHunter_data.py 
 
@@ -1158,7 +1161,7 @@ def main():
                     outcome, predictors_prelim,
                     include_study_dum, include_imp_dums, imp_dums_only, 
                     include_clinvars, include_LCMSvars, standardize=std_vars)
-    #print "Predictors to include, pre-screening:\n" , predictors
+    print "Predictors to include, pre-screening:\n" , predictors
 
     ## Build library of classifiers ##
     screen, pred_count = get_screen(screenType, screenNum, predictors)
@@ -1168,11 +1171,13 @@ def main():
 
     ## Keep only columns in predictors list, create arrays ##
     X = df[predictors].astype(float).values
+    print "type and X.shape: " , type(X), X.shape
     y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
+    print "type and y.shape: " , type(y), y.shape
     #print "Actual outcomes: " , y[:10]
     #X, y=datasets.make_classification(n_samples=88, n_features=95) #toy data
 
-    ## Name of text file containing performance measures (to either create or import)
+    ## Establish name of text file containing performance measures (to either create or import)
         #used for main analysis and VIM analysis
     if onlyLCMSpatients == True: 
         #indicate restriction to only LCMS patients
@@ -1188,6 +1193,40 @@ def main():
         #case in which LCMS data is not used at all
         outName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + FileNameSuffix
     print "outName: " , outName 
+
+    ## Choose subset of LCMS features ##
+    if run_BestSubset == True:
+        #obtain array of variable importance scores
+        rf = RandomForestClassifier(random_state=101)
+        rf = rf.fit(X,y)
+        all_VIM_rf = rf.feature_importances_
+        print "all_VIM_rf: " , all_VIM_rf
+        print "type(all_VIM_rf): " , type(all_VIM_rf), all_VIM_rf.shape
+        #all_VIM_rf = 
+        #find index numbers of LC-MS features
+        LCMS_indices = []
+        for counter, name in enumerate(predictors):
+            y = re.findall("MZ_.*", name)
+            assert len(y) in (0,1)
+            if len(y)==1: LCMS_indices.append(counter)
+        LCMS_indices = np.array(LCMS_indices)
+        print "LCMS_indices: " , LCMS_indices
+        #keep only LCMS features in ranked list
+        LCMS_VIM_rf = all_VIM_rf[LCMS_indices]
+        print "LCMS_VIM_rf: " , LCMS_VIM_rf
+        #indices in LCMS_VIM_rf of topX LCMS features 
+        topX_nindices = np.argpartition(LCMS_VIM_rf, -3)[-3:]
+        print "type of topX_nindices: " , type(topX_nindices)
+        print "topX_nindices: " , topX_nindices
+        #import pdb
+        #pdb.set_trace()
+        topX_nindices = topX_nindices[np.argsort(LCMS_VIM_rf[topX_nindices])] #sorted
+        #names (or original indices) of these chosen features
+        topX_indices = LCMS_indices[topX_nindices]
+        print "topX_indices: " , topX_indices
+        print "values of topX_indices: " , all_VIM_rf[topX_indices]
+        #ttest_select = function(tdata, topX=5, use_clinical)
+    dsfsdf
 
     ## Get CV predictions and performance measures ##
     if run_MainAnalysis == True:
