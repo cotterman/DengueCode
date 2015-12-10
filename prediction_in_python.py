@@ -358,7 +358,7 @@ def add_imput_dummies(include_imp_dums, imp_dums_only, df, predictors_prelim):
     return predictors
 
 def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample, 
-            NoOFI, onlyLCMSpatients, outcome, predictors_prelim, include_study_dum, 
+            NoOFI, onlyLCMSpatients, noLCMSpatients, outcome, predictors_prelim, include_study_dum, 
             include_imp_dums, imp_dums_only, include_clinvars, include_LCMSvars, standardize=True):
     """
         Create pandas dataframe from text files created in R and extract_LCMS_features.py
@@ -415,6 +415,10 @@ def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample,
         df = df_prelim
         all_predictors = []
     
+    #restrict to non-LCMS patients if desired
+    if noLCMSpatients==True:
+        common = pd.merge(df, LCMS, on=('code','Study','Cod_Nin'))
+        df[(~df.code.isin(common.code))&(~df.Study.isin(common.Study))&(~df.Cod_Nin.isin(common.Cod_Nin))]
 
     #add in LCMS data if desired 
     if include_LCMSvars==True or onlyLCMSpatients==True:
@@ -954,6 +958,34 @@ def plot_only_VIM2(resultsDFvim2):
     plt.yticks(positions, np.array(resultsDFvim2["varname"]))
     plt.savefig(outDir + "VIM2_only" + '.eps', dpi=1200)
 
+
+def get_topJ(X, y, predictors):
+    """Return the positions (in predictor list) of top LCMS predictors
+        
+    """
+    J = 10 #can take subset afterwards
+    #obtain array of variable importance scores
+    rf = RandomForestClassifier(random_state=101)
+    rf = rf.fit(X,y)
+    all_VIM_rf = rf.feature_importances_
+    #find index numbers of LC-MS features
+    LCMS_indices = []
+    for counter, name in enumerate(predictors):
+        y = re.findall("MZ_.*", name)
+        assert len(y) in (0,1)
+        if len(y)==1: LCMS_indices.append(counter)
+    LCMS_indices = np.array(LCMS_indices)
+    #keep only LCMS features in ranked list
+    LCMS_VIM_rf = all_VIM_rf[LCMS_indices]
+    #indices in LCMS_VIM_rf of topJ LCMS features 
+    topJ_nindices = np.argpartition(LCMS_VIM_rf, -J)[-J:]
+    topJ_nindices = topJ_nindices[np.argsort(LCMS_VIM_rf[topJ_nindices])] #sorted
+    #names (or original indices) of these chosen features
+    topJ_indices = LCMS_indices[topJ_nindices]
+    print "topJ_indices: " , topJ_indices
+    print "values of topJ_indices: " , all_VIM_rf[topJ_indices]
+    return topJ_indices
+
 def parse_arguments():
     """Parse arguments provided at the command line level
     """        
@@ -1157,8 +1189,8 @@ def main():
 
     ## Create pandas dataframe with data that was cleaned in R ##
     df, predictors = get_data(inputsDir, inClinData, inLCMSData,
-                    NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients,
-                    outcome, predictors_prelim,
+                    NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
+                    outcome, predictors_prelim, 
                     include_study_dum, include_imp_dums, imp_dums_only, 
                     include_clinvars, include_LCMSvars, standardize=std_vars)
     print "Predictors to include, pre-screening:\n" , predictors
@@ -1196,36 +1228,44 @@ def main():
 
     ## Choose subset of LCMS features ##
     if run_BestSubset == True:
-        #obtain array of variable importance scores
-        rf = RandomForestClassifier(random_state=101)
-        rf = rf.fit(X,y)
-        all_VIM_rf = rf.feature_importances_
-        print "all_VIM_rf: " , all_VIM_rf
-        print "type(all_VIM_rf): " , type(all_VIM_rf), all_VIM_rf.shape
-        #all_VIM_rf = 
-        #find index numbers of LC-MS features
-        LCMS_indices = []
-        for counter, name in enumerate(predictors):
-            y = re.findall("MZ_.*", name)
-            assert len(y) in (0,1)
-            if len(y)==1: LCMS_indices.append(counter)
-        LCMS_indices = np.array(LCMS_indices)
-        print "LCMS_indices: " , LCMS_indices
-        #keep only LCMS features in ranked list
-        LCMS_VIM_rf = all_VIM_rf[LCMS_indices]
-        print "LCMS_VIM_rf: " , LCMS_VIM_rf
-        #indices in LCMS_VIM_rf of topX LCMS features 
-        topX_nindices = np.argpartition(LCMS_VIM_rf, -3)[-3:]
-        print "type of topX_nindices: " , type(topX_nindices)
-        print "topX_nindices: " , topX_nindices
-        #import pdb
-        #pdb.set_trace()
-        topX_nindices = topX_nindices[np.argsort(LCMS_VIM_rf[topX_nindices])] #sorted
-        #names (or original indices) of these chosen features
-        topX_indices = LCMS_indices[topX_nindices]
-        print "topX_indices: " , topX_indices
-        print "values of topX_indices: " , all_VIM_rf[topX_indices]
-        #ttest_select = function(tdata, topX=5, use_clinical)
+
+        def subset_data(X, y, patients, variables):
+            """
+                patients: "noSerumLCMS" or "onlySerumLCMS"
+                variables: "clinical"
+            """
+            if patients == "noSerumLCMS":
+                df = df[df.serum!=1]
+            elif patients == "onlySerumLCMS":
+                df = df[df.serum==1]
+            newX = 
+            newY = 
+            return newX, newY
+
+        predDF = pd.DataFrame() #this will hold predicted probs for all runs here
+
+        #predictions for LCMS patients using clin data fit to all non-LCMS hospit patients
+            #no need to keep track of predictor indices and whatnot
+        def predict_for_LCMSpatients_allClin(X, y, ):
+            sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+            X_noLCMS, y_noLCMS = subset_data(X, y, patients = "noSerumLCMS", variables = "clinical")
+            clinSL = sl.fit(X_noLCMS, y_noLCMS)
+            X_withLCMS, y_withLCMS = subset_data(X, y, patients = "onlySerumLCMS", variables = "all")
+            SL_preds_clin = clinSL.predict_proba(X_withLCMS)
+            return SL_preds_clin
+
+        #predictions for LCMS patients using SL_preds_clin plus topJ LCMS features
+        X_withLCMS, y_withLCMS = subset_data(X, y, patients = "onlySerumLCMS", variables = "all")
+        topJ_indices = get_topJ(X_withLCMS, y_withLCMS, predictors)     
+        sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
+        cv_gen = cv.StratifiedKFold(y, n_folds=5, shuffle=True, random_state=10)
+        for i in xrange(10):
+            indices_to_use = clin_indices + topJ_indices[:i]
+            SL_preds_topJ = cross_val_predict_proba(sl, X[indices_to_use], y, cv_gen)
+            predDF.insert(SL_preds_topJ)
+        return predDF
+
+        
     dsfsdf
 
     ## Get CV predictions and performance measures ##
@@ -1255,7 +1295,9 @@ def main():
     else:
         print "reading from results files"
         if True==True:
-            alg_list = ['CART', 'Centroids', 'LDA+shrinkage', 'Gradient Boost', 'AdaBoost', 'Random Forests', 'N.Neighbor', 'Logit-L1', 'Logit-L2', 'SVM-L2','Super Learner']
+            alg_list = ['CART', 'Centroids', 'LDA+shrinkage', 'Gradient Boost', 
+                        'AdaBoost', 'Random Forests', 'N.Neighbor', 'Logit-L1', 
+                        'Logit-L2', 'SVM-L2','Super Learner']
             rDF = pd.read_csv(outDir + 'R_' + outName + '.txt', sep=",")
             resultsDF = rDF[rDF['Unnamed: 0'].isin(alg_list)]
             predDF = pd.read_csv(outDir + 'P_' + outName + '.txt', sep=',')
