@@ -118,9 +118,9 @@ load(paste(outputsDir,"clin_full_wImputedRF1.RData", sep="")) #loads clin_full_w
 #load(paste(outputsDir,"comboD3_filter50n.RData", sep="")) #loads comboD3_filter50n
 #load(paste(outputsDir,"comboD5_filter50n.RData", sep="")) #loads comboD5_filter50n
 # this data was created in "create_data_for_analysis.R" - contains mass hunter LCMS combined with imputed clinical
-load(paste(outputsDir,"comboD1_filter50n_wImpRF1.RData", sep="")) #loads comboD1_filter50n_wImpRF1 -- now with clin24 data
-#load(paste(outputsDir,"comboD3_filter50n_wImpRF1.RData", sep="")) #loads comboD3_filter50n_wImpRF1
-#load(paste(outputsDir,"comboD5_filter50n_wImpRF1.RData", sep="")) #loads comboD5_filter50n_wImpRF1
+load(paste(outputsDir,"comboD1_filter50n_wImpRF1.RData", sep="")) #loads comboD1_filter50n_wImpRF1 -- now with clin12 data
+load(paste(outputsDir,"comboD3_filter50n_wImpRF1.RData", sep="")) #saliva
+load(paste(outputsDir,"comboD5_filter50n_wImpRF1.RData", sep="")) #urine
 
 # this data was created in "prepare_python_output_for_analysis.R" - contains binned LCMS combined with clinical
 #load(paste(outputsDir,"df1_from_python_withRdata.RData", sep="")) #loads comboD1_bins50x50

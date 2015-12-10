@@ -17,10 +17,17 @@ respD2_filter50n = clean_LCMS(infile="LCMS_serum_Nica_50percent_batches 3 and 4.
 respD2_filter10n = clean_LCMS(infile="LCMS_serum_Nica_10percent_batches 3 and 4.txt", lcms_run=2, printme=TRUE) #83 samples
 
 #for non-invasive Nicaraguan samples (urine and saliva)
-respD3_filter50n = clean_LCMS(infile="LCMS_saliva_Nica_50percent.txt", lcms_run=3, printme=TRUE) #86 (as in LCMS excel)
+temp = clean_LCMS(infile="LCMS_saliva_Nica_50percent.txt", lcms_run=3, printme=TRUE) #86 (as in LCMS excel)
+#remove observation that probably has incorrect ID
+respD3_filter50n = temp[which(temp$code!="ID1408"),]  #85
+write.table(respD3_filter50n, paste(outputsDir,"respD3_filter50n.txt", sep=""), sep="\t")
+
 temp = clean_LCMS(infile="LCMS_urine_Nica_50percent.txt", lcms_run=5, printme=TRUE) #91 (as in LCMS excel)
-#get rid of duplicated code/study ID (note: this will keep one of the observation in each duplicate group -- will remove later)
-respD5_filter50n = temp[!duplicated(temp[,c("code","Study")]),] #86 (and still more to remove)
+#remove observation that probably has incorrect ID and those which were duplicated in this data
+respD5_filter50n = temp[which(temp$code!="ID1408" & temp$code!="ID1304" & temp$code!="ID1315" & 
+                                         temp$code!="ID1342" & temp$code!="ID1348" & temp$code!="ID1380"),]  #80
+write.table(respD5_filter50n, paste(outputsDir,"respD5_filter50n.txt", sep=""), sep="\t")
+
 
 # Combine the abundance data (runs 1 and 2) 
 #list the columns (mz values) that are in common between serum runs 1 and 2
@@ -45,6 +52,10 @@ clin24_restricted_clean = merge(IDs_in_resp_all, clin24_full_clean, by=c("code",
 
 #keep only clinical observations for batch 1 LCMS data
 clin24_D1_clean = merge(respD1_filter50n[,c("code","Study")], clin24_full_clean, by=c("code","Study"), all=FALSE)
+clin12_D1_clean = merge(respD1_filter50n[,c("code","Study")], clin12_full_clean, by=c("code","Study"), all=FALSE)
+clin12_D3_clean = merge(respD3_filter50n[,c("code","Study","Cod_Nin")], clin12_full_clean, by=c("code","Study","Cod_Nin"), all=FALSE)
+clin12_D5_clean = merge(respD5_filter50n[,c("code","Study","Cod_Nin")], clin12_full_clean, by=c("code","Study","Cod_Nin"), all=FALSE)
+
 
 ## Write this clinical data to file for easy future access ##
 save(clin24_full_clean, file=paste(outputsDir,"clin24_full_clean.RData", sep=""))
@@ -141,7 +152,7 @@ save(comboD1_filter50n, file=paste(outputsDir,"comboD1_filter50n.RData", sep="")
 #Data for serum run 2 only
 comboD2_filter50n <- merge(clin24_restricted_clean, respD2_filter50n, by=c("code","Study"), all=F) #75 obs
 
-#Data for Nicaragua saliva
+#Data for Nicaragua saliva -- might need to redo with Cod_Nin taken into account
 temp <- merge(clin24_restricted_clean, respD3_filter50n, by=c("code","Study"), all=F) 
 #remove observation that probably has incorrect ID
 comboD3_filter50n = temp[which(temp$code!="ID1408"),]  #85
@@ -150,7 +161,7 @@ save(comboD3_filter50n, file=paste(outputsDir,"comboD3_filter50n.RData", sep="")
 comment(comboD3_filter50n) <- "Data contains Nicaragua saliva LCMS (Mass Hunter data from Natalia) and corresponding clinical data.  
       Nothing has been imputed (contains missings)."
 
-#Data for Nicaragua urine
+#Data for Nicaragua urine -- might need to redo with Cod_Nin taken into account
 temp <- merge(clin24_restricted_clean, respD5_filter50n, by=c("code","Study"), all=F) 
 #remove observation that probably has incorrect ID and those which were duplicated in this data
 comboD5_filter50n = temp[which(temp$code!="ID1408" & temp$code!="ID1304" & temp$code!="ID1315" & 
@@ -167,7 +178,7 @@ comment(comboD5_filter50n) <- "Data contains Nicaragua urine LCMS (Mass Hunter d
 comboD1D2_wImpRF1 <- merge(clin_full_wImputedRF1, resp_D1D2, by=c("code","Study"), all=F)
 
 #Data for serum run 1 only
-comboD1_filter50n_wImpRF1 <- merge(clin24_full_wImputedRF1, respD1_filter50n, by=c("code","Study"), all=F) #88 obs
+comboD1_filter50n_wImpRF1 <- merge(clin12_full_wImputedRF1, respD1_filter50n, by=c("code","Study"), all=F) #88 obs
 save(comboD1_filter50n_wImpRF1, file=paste(outputsDir,"comboD1_filter50n_wImpRF1.RData", sep=""))
 write.table(comboD1_filter50n_wImpRF1, paste(outputsDir,"comboD1_filter50n_wImpRF1.txt", sep=""), sep="\t")
 
@@ -175,14 +186,27 @@ write.table(comboD1_filter50n_wImpRF1, paste(outputsDir,"comboD1_filter50n_wImpR
 comboD2_filter50n_wImpRF1 <- merge(clin_full_wImputedRF1, respD2_filter50n, by=c("code","Study"), all=F) #75 obs
 
 #Data for Nicaragua saliva
-temp <- merge(clin_full_wImputedRF1, respD3_filter50n, by=c("code","Study"), all=F) 
+temp <- merge(clin12_full_wImputedRF1, respD3_filter50n, by=c("code","Study","Cod_Nin"), all=F) 
 #remove observation that probably has incorrect ID
 comboD3_filter50n_wImpRF1 = temp[which(temp$code!="ID1408"),]  #85
 save(comboD3_filter50n_wImpRF1, file=paste(outputsDir,"comboD3_filter50n_wImpRF1.RData", sep=""))
+write.table(comboD3_filter50n_wImpRF1, paste(outputsDir,"comboD3_filter50n_wImpRF1.txt", sep=""), sep="\t")
+
 #Data for Nicaragua urine
-temp <- merge(clin_full_wImputedRF1, respD5_filter50n, by=c("code","Study"), all=F) 
+temp <- merge(clin12_full_wImputedRF1, respD5_filter50n, by=c("code","Study","Cod_Nin"), all=F) 
 #remove observation that probably has incorrect ID and those which were duplicated in this data
 comboD5_filter50n_wImpRF1 = temp[which(temp$code!="ID1408" & temp$code!="ID1304" & temp$code!="ID1315" & 
                                  temp$code!="ID1342" & temp$code!="ID1348" & temp$code!="ID1380"),]  #80
 save(comboD5_filter50n_wImpRF1, file=paste(outputsDir,"comboD5_filter50n_wImpRF1.RData", sep=""))
+write.table(comboD5_filter50n_wImpRF1, paste(outputsDir,"comboD5_filter50n_wImpRF1.txt", sep=""), sep="\t")
+
+### for Kristofs batch 1 patients ###
+RP_batch1 = read.csv(paste(clinical_inputsDir,"RP_batch1_sample_merge_info.csv", sep=""), header=TRUE, nrows=1000)
+names(RP_batch1)[names(RP_batch1)==c("Code")] = c("code") #rename column
+RP_batch1$code = apply(X=RP_batch1, MARGIN = 1, FUN=fcode, var="code")
+RP_batch1$Cod_Nin = tolower(RP_batch1$Sample)
+RP_batch1[which(RP_batch1$Study=="Hospital"),c("Cod_Nin")] = NA
+clinical_RPb1_clean <- merge(clin12_full_wImputedRF1, RP_batch1, by=c("code","Study","Cod_Nin"), all=F)
+save(clinical_RPb1_clean, file=paste(outputsDir,"clinical_RPb1_clean.RData", sep=""))
+write.table(clinical_RPb1_clean, paste(outputsDir,"clinical_RPb1_clean.txt", sep=""), sep="\t")
 

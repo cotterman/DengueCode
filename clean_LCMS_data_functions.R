@@ -61,7 +61,7 @@ clean_LCMS = function(infile, lcms_run, roundme=FALSE, decimals=2, printme=FALSE
   #add an indicator of LCMS_run (to keep track once merged with other round of LC-MS)
   respD["LCMS_run"] = lcms_run
   
-  #add an indicator for type of study (will need this later when we merge)
+  #add an indicator for type of study and sample code (will need this later when we merge)
   if(lcms_run==1){
     respD["Study"] = "Hospital"
   } else {
