@@ -116,6 +116,39 @@ num_miss_by_patient = apply(df[,c(covarlist_CohortRestrict)], MARGIN=1, FUN=func
 table(num_miss_by_patient)
 
 
+############# samples sizes of LCMS data #################
+
+#OFI versus DENV
+table(comboD1_filter50n_wImpRF1$is.DEN, useNA="always") 
+table(comboD3_filter50n_wImpRF1$is.DEN, useNA="always") 
+table(comboD5_filter50n_wImpRF1$is.DEN, useNA="always") 
+table(clinical_RPb1_clean$is.DEN, useNA="always") 
+View(clinical_RPb1_clean[which(is.na(clinical_RPb1_clean$WHO_initial_given) | is.na(clinical_RPb1_clean$WHOFinal4cat)),])
+#cohort sample 2578.10.a is dengue positive but has unknown severity level
+View(clinical_RPb1_clean[which(is.na(clinical_RPb1_clean$is.DEN) | is.na(clinical_RPb1_clean$is.DHF_DSS)),])
+
+#severe dengue
+table(comboD1_filter50n_wImpRF1$WHOFinal4cat, useNA="always") 
+table(comboD1_filter50n_wImpRF1$WHO_initial_given, comboD1_filter50n_wImpRF1$WHOFinal4cat, useNA="always") 
+table(clinical_RPb1_clean$WHOFinal4cat, useNA="always") 
+table(clinical_RPb1_clean$WHO_initial_given, clinical_RPb1_clean$WHOFinal4cat, useNA="always") 
+table(comboD3_filter50n_wImpRF1$WHOFinal4cat, useNA="always") 
+table(comboD5_filter50n_wImpRF1$WHOFinal4cat, useNA="always") 
+
+#basic info on LCMS samples -- days since illness onset
+table(comboD1_filter50n_wImpRF1$DaysSick)
+table(comboD1_filter50n_wImpRF1$DaysSick,comboD1_filter50n_wImpRF1$is.DEN)
+table(comboD3_filter50n_wImpRF1$DaysSick)
+table(comboD3_filter50n_wImpRF1$DaysSick,comboD3_filter50n_wImpRF1$is.DEN)
+table(comboD5_filter50n_wImpRF1$DaysSick)
+table(comboD5_filter50n_wImpRF1$DaysSick,comboD5_filter50n_wImpRF1$is.DEN)
+
+#basic info on LCMS samples -- serotype
+table(comboD1_filter50n_wImpRF1$PCR, comboD1_filter50n_wImpRF1$PCR_imputed)
+table(comboD3_filter50n_wImpRF1$PCR, comboD3_filter50n_wImpRF1$PCR_imputed)
+table(comboD5_filter50n_wImpRF1$PCR, comboD5_filter50n_wImpRF1$PCR_imputed)
+
+
 ###############################################################################
 ############### Summary of clinical variables for dissertation ################
 ###############################################################################

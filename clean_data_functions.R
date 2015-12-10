@@ -53,7 +53,7 @@ get_study = function(respD_only, lcms_run, clinical_inputsDir){
   } else if(lcms_run==5){
     study_info = read.delim(paste(clinical_inputsDir,"Study classifications_urine.txt", sep=""), header=TRUE, nrows=200)
   }
-  newnames = as.character(c("Study","code","Res_Final2","OMS"))
+
   #reformat the sample ID variable so that it is "ID" followed by 4-digit character variable
   fcode =    function(x) sprintf("ID%04d",as.numeric(as.character(x["code"])))
   code_list = apply(X=study_info, MARGIN = 1, FUN=fcode)
@@ -61,7 +61,24 @@ get_study = function(respD_only, lcms_run, clinical_inputsDir){
   
   #merge with lc-ms data
   mismatches = get_mismatches(v1=study_info[,"code"], v2=respD_only[,"code"], v1_name="study info", v2_name="LCMS")
-  respD_new = merge(study_info[,c("Study","code")], respD_only, by="code") #this returns the intersection of each dataset
+  respD_new = merge(study_info[,c("Study","code","Sample")], respD_only, by="code") #this returns the intersection of each dataset
+  
+  #make "sample" ID compatible with what clinical data contains
+  #should be number.number.lowercaseletter
+    #so eliminate everything starting with the 3rd period (if there is anything there)
+    #and then convert to lowercase anything after the 2nd period
+  get_Cod_Nin = function(x){
+    LocateDecimal2 = gregexpr(pattern ='\\.', x)[[1]][2]
+    mystop = ifelse(is.na(LocateDecimal2), 50, LocateDecimal2-1)
+    part1 = substr(x, start=1, stop=mystop)
+    LocateDecimal3 = gregexpr(pattern ='\\.', x)[[1]][3]
+    part2 = tolower(substr(x, start=LocateDecimal2+1, stop=LocateDecimal3-1))
+    paste(part1,part2,sep=".")
+  }
+  respD_new$Cod_Nin = sapply(respD_new$Sample, get_Cod_Nin)
+  #each observation in hospital data has unique code so no need for Cod_Nin - turn to missings to enable proper merge
+  respD_new[which(respD_new$Study=="Hospital"),c("Cod_Nin")] = NA
+  
   get_dupIDs(respD_new[,"code"], "LCMS") #may still have duplicates
   
   return(respD_new)
