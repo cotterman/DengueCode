@@ -18,6 +18,7 @@ from pandas.core.categorical import Categorical
 import matplotlib as mpl
 mpl.use('Agg') #avoids running an X server (to avoid errors with remote runs)
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 #import matplotlib.pyplot as plt; plt.rcdefaults()
 #import seaborn as sns #for prettier plots
 #from matplotlib import style
@@ -32,20 +33,6 @@ from scipy import stats
 from scipy.ndimage import imread
 import scipy.ndimage as ndi
 
-import sklearn
-print "Version of sklearn: " , sklearn.__version__ #should be v0.16.1
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.ensemble import AdaBoostClassifier, ExtraTreesClassifier
-from sklearn import cross_validation
-import sklearn.cross_validation as cv
-from sklearn.cross_validation import cross_val_score, cross_val_predict
-from sklearn import grid_search, metrics, datasets, preprocessing, feature_selection
-from sklearn.feature_selection import SelectKBest
-from sklearn.lda import LDA
-from sklearn.qda import QDA
-from sklearn import svm, linear_model, neighbors, dummy, tree
-from sklearn.pipeline import Pipeline
-#from sklearn.linear_model import LogisticRegressionCV
 
 sys.path.append('../SuPyLearner/supylearner')
 import core #this is the main SuPyLearner code
@@ -102,6 +89,94 @@ def parse_args(patient_sample, outcome, NoOFI, NoInitialDHF):
             FileNamePrefix = "OFIDF.v.DHFDSS"
     return GraphInfo(patient_sample, comparison_groups, FileNamePrefix, NoInitialDHF, NoOFI)
 
+def create_LCMS_topJ_barplot(ginfo):
+  
+    ## Set graph features
+    fig, ax = plt.subplots()
+    bar_width = 1
+    #palette will be ordered from light to dark by default
+    colors_noLCMS = sns.light_palette("charcoal", input="xkcd", reverse=True, n_colors=4) 
+    colors_ttest = sns.light_palette("forest green", input="xkcd", reverse=True, n_colors=4) 
+    colors_topRF = sns.light_palette("dark blue", input="xkcd", reverse=True, n_colors=4) 
+    plt.figure(figsize=(6.7,8)) 
+
+    ## Decide which data to include
+    temp = range(7) + [744]
+    LCMSvars_list = temp[::-1] #want 0 to be high on graph - plot it last
+    subsetAlg_list = ['ttest','topRF']
+    method_list = ['M3','M2','M1'] #M1 will be high on graph (good)
+
+    ## Prepare data to be graphed    
+    ttestDF = pd.read_csv(outDir + 'R_BestSubset_ttest_NPserum.txt', sep=",")
+    ttestDF['mlabel'] = ttestDF['Unnamed: 0']
+    topRFDF = pd.read_csv(outDir + 'R_BestSubset_topRF_NPserum.txt', sep=",")
+    topRFDF['mlabel'] = topRFDF['Unnamed: 0']
+
+    ## To fill in during loop
+    alg_pos = []
+    measurements = []
+    colors = []
+    method_labels = []
+    colors_legend = []
+    ytick_labels = []
+    ytick_positions = []
+    ymax = 0
+
+    ## Cycle through for number of LCMS vars
+    for counter, LCMSvars in enumerate(LCMSvars_list):
+        ytick_labels.append("Clinical + \n"+str(LCMSvars)+" LCMS features")
+        if LCMSvars==0:
+            ytick_positions.append(ymax+1)
+        else:
+            ytick_positions.append(ymax+3)
+
+        #cycle through LCMS feature selection method ('ttest' and 'topRF')
+        for num, subsetAlg in enumerate(subsetAlg_list):
+
+            #cycle through methods for treating clinical info (1, 2, and 3)
+            for method in method_list:
+                #only do once when not adding any LCMS features
+                    #does not make sense to compare the ttest and topRF subsetAlg approaches
+                if LCMSvars == 0 and num>0:
+                    continue
+                rowlab = method + '_LCMS_' + str(LCMSvars)
+                if subsetAlg=="ttest": 
+                    df = ttestDF
+                    colors_list = colors_ttest
+                elif subsetAlg=="topRF": 
+                    df = topRFDF
+                    colors_list = colors_topRF
+                if LCMSvars == 0:
+                    colors_list = colors_noLCMS
+                    method_labels.append(method)
+                    colors_legend.append(colors_list[int(method[1])-1])
+                elif LCMSvars == 1:
+                    method_labels.append(subsetAlg + ' ' + method)
+                    colors_legend.append(colors_list[int(method[1])-1])
+                measurements.append(float(df.loc[df['mlabel']==rowlab]['cvAUC']))
+                alg_pos.append(ymax)
+                #color list was determined by subsetAlg; saturation is based on method
+                colors.append(colors_list[int(method[1])-1])
+                ymax += bar_width
+        #add space between groups of bars segmented by number of LCMS features
+        ymax += bar_width
+
+    plt.barh(bottom=alg_pos, width=measurements, height=bar_width,
+                    align='center', alpha=1, color=colors)
+    plt.yticks(ytick_positions, ytick_labels) #size=16
+    plt.xlim(.5, 1)
+    plt.ylim(-2, ymax+6) 
+    #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
+    plt.subplots_adjust(left=.22, right=.9, top=.9, bottom=.1)
+    lhandles = []
+    for mycolor in colors_legend[::-1]:
+        hand = mpatches.Patch(color=mycolor)
+        lhandles.append(hand)
+    leg = plt.legend((lhandles), (method_labels[::-1]), ncol=3)
+    #plt.tight_layout()
+
+    plt.savefig(outDir + 'LCMS_subsets.eps', dpi=1200) 
+    plt.close()  
 
 def create_LCMS_barplot(ginfo, LCMScompare):
     """Bar plot with bars grouped by predictor set and colors indicating LCMS run  
@@ -399,9 +474,12 @@ def main():
     ## Obtain graph title, filename prefix, etc.
     ginfo = parse_args(patient_sample, outcome, NoOFI, NoInitialDHF)
 
+    ## Bart plot which compares methods to choose best subset of LCMS features
+    create_LCMS_topJ_barplot(ginfo)
+
     ## Bar plot with bars grouped by predictor set and colors indicating LCMS run 
-    LCMScompare = "NonInvasives" #"NonInvasives", "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
-    create_LCMS_barplot(ginfo, LCMScompare)   
+    #LCMScompare = "NonInvasives" #"NonInvasives", "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
+    #create_LCMS_barplot(ginfo, LCMScompare)   
 
     ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors sets 
     #create_predSets_barplot(ginfo)

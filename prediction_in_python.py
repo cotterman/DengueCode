@@ -960,30 +960,55 @@ def plot_only_VIM2(resultsDFvim2):
     plt.savefig(outDir + "VIM2_only" + '.eps', dpi=1200)
 
 
-def get_topJ(X, y, predictors, J):
+def get_topJ(X, y, predictors, J, subsetAlg):
     """Return the positions (in predictor list) of top LCMS predictors as numpy array
-        
+       subsetAlg specified desired method ('topRF' or 'ttest' etc.)
     """
-    #obtain array of variable importance scores
-    rf = RandomForestClassifier(random_state=101)
-    rf = rf.fit(X,y)
-    all_VIM_rf = rf.feature_importances_
     #find index numbers of LC-MS features
     LCMS_indices = []
     for counter, name in enumerate(predictors):
-        y = re.findall("MZ_.*", name)
-        assert len(y) in (0,1)
-        if len(y)==1: LCMS_indices.append(counter)
+        f = re.findall("MZ_.*", name)
+        assert len(f) in (0,1)
+        if len(f)==1: LCMS_indices.append(counter)
     LCMS_indices = np.array(LCMS_indices)
-    #keep only LCMS features in ranked list
-    LCMS_VIM_rf = all_VIM_rf[LCMS_indices]
-    #indices in LCMS_VIM_rf of topJ LCMS features 
-    topJ_nindices = np.argpartition(LCMS_VIM_rf, -J)[-J:]
-    topJ_nindices = topJ_nindices[np.argsort(LCMS_VIM_rf[topJ_nindices])] #sorted
-    #names (or original indices) of these chosen features
-    topJ_indices = LCMS_indices[topJ_nindices]
+
+    if subsetAlg=="ttest":
+        #find test stat and pval for each LCMS variable 
+        tstats = []
+        t_indices = []
+        for i in LCMS_indices:
+            s_neg = X[y==0, i]
+            s_pos = X[y==1, i]
+            tstat, pval = stats.ttest_ind(s_neg, s_pos, equal_var=False)
+            #invoke pval criteria since high test stat is worthless if high pval
+            if pval<.05:
+                tstats.append(tstat)
+                t_indices.append(i)
+        tstats = np.array(t_indices)
+        t_indices = np.array(t_indices)
+        #indices in tstats of topJ LCMS features 
+        topJ_tindices = np.argpartition(tstats, -J)[-J:]
+        topJ_tindices = topJ_tindices[np.argsort(tstats[topJ_tindices])] #sorted
+        #original indices of the J features
+        topJ_indices = t_indices[topJ_tindices]
+        print "values of topJ_indices: " , tstats[topJ_tindices]  
+
+    elif subsetAlg=="topRF":
+        #obtain array of variable importance scores
+        rf = RandomForestClassifier(random_state=101)
+        rf = rf.fit(X,y)
+        all_VIM_rf = rf.feature_importances_
+        #keep only LCMS features in ranked list
+        LCMS_VIM_rf = all_VIM_rf[LCMS_indices]
+        #indices in LCMS_VIM_rf of topJ LCMS features 
+        topJ_nindices = np.argpartition(LCMS_VIM_rf, -J)[-J:]
+        topJ_nindices = topJ_nindices[np.argsort(LCMS_VIM_rf[topJ_nindices])] #sorted
+        #original indices of these chosen features
+        topJ_indices = LCMS_indices[topJ_nindices]
+        print "values of topJ_indices: " , all_VIM_rf[topJ_indices]
+
     print "topJ_indices: " , topJ_indices
-    print "values of topJ_indices: " , all_VIM_rf[topJ_indices]
+    
     return topJ_indices
 
 def TopJ_and_clin(X, predictors, topJ_indices, j):
@@ -1068,7 +1093,7 @@ def predict_for_LCMSpatients_allClin(inputsDir, inClinData, inLCMSData,
 def bestSubset_predictions(inputsDir, inClinData, inLCMSData,
             NoInitialDHF, NoOFI, outcome, predictors_prelim, 
             include_study_dum, include_imp_dums, imp_dums_only, std_vars, testlib,
-            predsSub, resultsSub, SL_preds_clin, subsetMethod, J):
+            predsSub, resultsSub, SL_preds_clin, subsetMethod, J, subsetAlg):
     """predictions for LCMS patients using topJ LCMS features plus 
         (a) clinical vars -- subsetMethod = 1
         (b) SL_preds_clin -- subsetMethod = 2 
@@ -1098,7 +1123,7 @@ def bestSubset_predictions(inputsDir, inClinData, inLCMSData,
     print "type and y_allLCMS.shape: " , type(y_allLCMS), y_allLCMS.shape
 
     #obtain topJ LCMS predictors using data created above
-    topJ_indices = get_topJ(X_allLCMS, y_allLCMS, predictors_all, J)
+    topJ_indices = get_topJ(X_allLCMS, y_allLCMS, predictors_all, J, subsetAlg)
 
     #obtain predictions using same data fed to get_topJ, but with only topJ LCMS vars
     cv_gen = cv.StratifiedKFold(y_allLCMS, n_folds=3, shuffle=True, random_state=10)
@@ -1126,7 +1151,7 @@ def bestSubset_predictions(inputsDir, inClinData, inLCMSData,
 def bestSubset_analysis(inputsDir, inClinData, inLCMSData,
                 NoInitialDHF, NoOFI, outcome, predictors_prelim, 
                 include_study_dum, include_imp_dums, imp_dums_only, 
-                std_vars, testlib, J):
+                std_vars, testlib, J, subsetAlg):
     """Output predicted probabilities and performance results csv
         for various algorithms with up to J LCMS features chosen
     """
@@ -1146,14 +1171,14 @@ def bestSubset_analysis(inputsDir, inClinData, inLCMSData,
         predsSub, resultsSub = bestSubset_predictions(inputsDir, inClinData, inLCMSData,
                 NoInitialDHF, NoOFI, outcome, predictors_prelim, 
                 include_study_dum, include_imp_dums, imp_dums_only, std_vars, testlib,
-                predsSub, resultsSub, SL_preds_clin, method, J)
+                predsSub, resultsSub, SL_preds_clin, method, J, subsetAlg)
     print "predsSub: " , predsSub
     print "resultsSub: " , resultsSub
     
     # print predicted probabilities to file (optional)
-    predsSub.to_csv(outDir+ 'P_BestSubset_NPserum.txt', sep=",") 
+    predsSub.to_csv(outDir+ 'P_BestSubset_' + subsetAlg + '_NPserum.txt', sep=",") 
     ## Add columns with additional methods info, print results to text file ##
-    resultsSub.to_csv(outDir+ 'R_BestSubset_NPserum.txt', sep=",")
+    resultsSub.to_csv(outDir+ 'R_BestSubset_' + subsetAlg + '_NPserum.txt', sep=",")
 
     return 
 
@@ -1296,7 +1321,7 @@ def main():
         #inLCMSData = "UrineMH" #prepared in prepare_MassHunter_data.py 
 
         ## Use a tiny SL library for testing purposes
-        testlib = True #false if you want to run normally
+        testlib = False #false if you want to run normally
      
     ## Choose variable screening method (if any) ##
     screenType = None #current options: None, "univariate", "L1"
@@ -1405,12 +1430,12 @@ def main():
     ## Analysis with chosen subsets of LCMS features ##
     if run_BestSubset == True:
         #Output predicted probabilities and performance results csv
-            #for various algorithms with up to J LCMS features chosen
-        J = 6
+        J = 6 #select up to J top LCMS features
+        subsetAlg = "ttest" #options: "topRF","ttest"
         bestSubset_analysis(inputsDir, inClinData, inLCMSData,
                     NoInitialDHF, NoOFI, outcome, predictors_prelim, 
                     include_study_dum, include_imp_dums, imp_dums_only, 
-                    std_vars, testlib, J)
+                    std_vars, testlib, J, subsetAlg)
 
     ## Get CV predictions and performance measures ##
     if run_MainAnalysis == True:
