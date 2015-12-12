@@ -1263,7 +1263,8 @@ def main():
         run_SL = False # if false, can still run algorithms in library, but not SL
         plot_MainAnalysis = False  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
-        run_BestSubset = True # true means to find best subset of LCMS features and run SL with them
+        run_BestSubset = False # true means to find best subset of LCMS features and run SL with them
+        run_FDR = True #true means to do false discovery rate analysis
         #determine which variable importance code to run
         run_VIM = False  # if false, none of the VIM code will be run
         forget_VIM1 = False # if true, will do VIM analysis and graphs without VIM1 output
@@ -1279,7 +1280,7 @@ def main():
         NoOFI = False #only applies to is.DHF_DSS analyses
 
         ## Choose whether to exclude samples with initial DHF/DSS diagnosis ##
-        NoInitialDHF = True #only applies to is.DHF_DSS analyses (should generally select True)
+        NoInitialDHF = False #only applies to is.DHF_DSS analyses (should generally select True)
 
         ## Choose patient sample - only applies when not using LCMS data ##
         #patient_sample = "all" 
@@ -1382,30 +1383,31 @@ def main():
 
     ## Preliminary list of predictors ##
     predictors_prelim = get_predictor_desc(predictor_desc+".txt", outcome, NoOFI)
-    #predictors_prelim = ['Melena']  #test
-    #print "Original predictor list:\n" , predictors_prelim
+    if True == False:
+        #predictors_prelim = ['Melena']  #test
+        #print "Original predictor list:\n" , predictors_prelim
 
-    ## Create pandas dataframe with data that was cleaned in R ##
-    df, predictors = get_data(inputsDir, inClinData, inLCMSData,
-                    NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
-                    outcome, predictors_prelim, 
-                    include_study_dum, include_imp_dums, imp_dums_only, 
-                    include_clinvars, include_LCMSvars, standardize=std_vars)
-    #print "Predictors to include, pre-screening:\n" , predictors
+        ## Create pandas dataframe with data that was cleaned in R ##
+        df, predictors = get_data(inputsDir, inClinData, inLCMSData,
+                        NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
+                        outcome, predictors_prelim, 
+                        include_study_dum, include_imp_dums, imp_dums_only, 
+                        include_clinvars, include_LCMSvars, standardize=std_vars)
+        #print "Predictors to include, pre-screening:\n" , predictors
 
-    ## Build library of classifiers ##
-    screen, pred_count = get_screen(screenType, screenNum, predictors)
-    libs, libnames = build_library( p=len(predictors), nobs=df.shape[0], 
-                            screen=screenType, testing=testlib)
-    print "libnames: ", libnames
+        ## Build library of classifiers ##
+        screen, pred_count = get_screen(screenType, screenNum, predictors)
+        libs, libnames = build_library( p=len(predictors), nobs=df.shape[0], 
+                                screen=screenType, testing=testlib)
+        print "libnames: ", libnames
 
-    ## Keep only columns in predictors list, create arrays ##
-    X = df[predictors].astype(float).values
-    print "type and X.shape: " , type(X), X.shape
-    y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
-    print "type and y.shape: " , type(y), y.shape
-    #print "Actual outcomes: " , y[:10]
-    #X, y=datasets.make_classification(n_samples=88, n_features=95) #toy data
+        ## Keep only columns in predictors list, create arrays ##
+        X = df[predictors].astype(float).values
+        print "type and X.shape: " , type(X), X.shape
+        y = df[outcome].astype(int).values #make outcome 0/1 and convert to np array
+        print "type and y.shape: " , type(y), y.shape
+        #print "Actual outcomes: " , y[:10]
+        #X, y=datasets.make_classification(n_samples=88, n_features=95) #toy data
 
     #sl = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
     #TestSL = sl.fit(X, y)
@@ -1427,11 +1429,161 @@ def main():
         outName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + FileNameSuffix
     print "outName: " , outName 
 
+    ## Analysis of LCMS feature significance (FDR analysis) ##
+    if run_FDR == True:
+
+        FDR = .20
+        K = 1000
+        
+        #obtain LCMS data with diagnostic outcome (but not other covariates)
+        include_clinvars = False 
+        include_LCMSvars = True
+        df, predictors = get_data(inputsDir, inClinData, inLCMSData,
+                    NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
+                    outcome, predictors_prelim, 
+                    include_study_dum, include_imp_dums, imp_dums_only, 
+                    include_clinvars, include_LCMSvars, standardize=std_vars)
+        X_orig = df[predictors].astype(float).values
+        X = preprocessing.scale(X_orig) #standardized values
+        print "type and X.shape: " , type(X), X.shape
+        y = df[outcome].astype(int).values 
+        print "type and y.shape: " , type(y), y.shape
+
+        def run_ttests(X,y,permute):
+            tstats = []
+            pvals = []
+            for i in xrange(X.shape[1]):
+                if permute == True:
+                    #permutation will be different for each feature.
+                    y = np.random.permutation(y)
+                s_neg = X[y==0, i]
+                s_pos = X[y==1, i]
+                tstat, pval = stats.ttest_ind(s_neg, s_pos, equal_var=True)
+                tstats.append(tstat)
+                pvals.append(pval)
+            tstats_ordered = np.sort(np.array(tstats))
+            pvals = np.array(pvals)
+            return tstats_ordered, pvals
+
+        #obtain actual t-stats and p-vals from data for each LCMS feature
+        tstats_ordered, pvals = run_ttests(X, y, permute=False)
+
+        #get K permuted t-stats and p-vals for each LCMS feature
+        for i in xrange(K):
+            tstats_ordered_perm, pvals_perm = run_ttests(X, y, permute=True)
+            if i == 0:
+                tstats_allK = tstats_ordered_perm 
+                pvals_allK = pvals_perm       
+            else:
+                tstats_allK = np.vstack((tstats_allK, tstats_ordered_perm))
+                pvals_allK = np.hstack((pvals_allK, pvals_perm))
+        #ordered stat i is the average ordered stat i across the K values 
+        stats_ordered_permute = np.mean(tstats_allK, axis=0)  
+
+        #find the delta that gives desired FDR
+        tstat_diff = stats_ordered_permute - tstats_ordered
+        deltas_to_try = np.arange(.05, 1.5, .05)
+        for i, delta in enumerate(deltas_to_try):
+            print "Delta: " , delta
+            called_bool = np.abs(tstat_diff) > delta
+            called = tstats_ordered[called_bool==True, ]
+            smallest_pos = min(called[called>0,])
+            print "smallest_pos: " , smallest_pos
+            largest_neg = max(called[called<0,])
+            print "largest_neg: " , largest_neg
+            #number of features called significant 
+            called_count = np.sum(called_bool)
+            print "called_count: " , called_count
+            #number of falsely significant genes under the null
+            false_call1 = tstats_allK[tstats_allK < largest_neg,]
+            false_call2 = tstats_allK[tstats_allK > smallest_pos,]
+            false_call_count = (len(false_call1) + len(false_call2)) / float(K)
+            print "false_call_count: " , false_call_count
+            #FDR is number of false positives under null divided by number called significant
+            FDR_est = false_call_count / float(called_count)
+            print "FDR_est: " , FDR_est
+            if FDR_est < FDR:
+                print "Found a winner"
+                best_delta = delta
+                break
+            elif i == len(deltas_to_try)-1:
+                print "No winner found"
+                best_delta = .4      
+
+        #histogram of t-stats
+        tstat_hist = plt.figure(figsize=(4,4))
+        bins = np.linspace(-5, 5, 40)
+        plt.hist(tstats_ordered, bins, normed=True, color='aqua', alpha=.5)
+        #for null distribution, plot all t-stats from permutation (=K*744)
+        plt.hist(stats_ordered_permute, bins, normed=True, histtype='step', 
+                color='purple', lw=1)
+        plt.axvline(x=0, ymin=0, ymax=10,  color='gold', linestyle='-', lw=1)
+        plt.xlim(-6,6)
+        plt.xlabel("t-statistics")
+        #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
+        plt.subplots_adjust(left=.12, right=.9, top=.9, bottom=.15)
+        plt.savefig(outDir + 'LCMS_tstat_hist.eps', dpi=1200) 
+        plt.close() 
+
+        #plot of expected ordered t-stats vs. actual ordered t-stats (SAM)
+        SAM_scatter = plt.figure(figsize=(6.7,6.7))
+        plt.scatter(stats_ordered_permute, tstats_ordered, s=3, alpha=.5)
+        #45 degree line
+        xvals = np.linspace(-4, 4, 10000)
+        plt.plot(xvals, xvals, 'g-', lw=.5, alpha=.5)
+        #display SAM threshold band
+        plt.plot(xvals, xvals - best_delta, 'r-', lw=.5, alpha=.5)
+        plt.plot(xvals, xvals + best_delta, 'r-', lw=.5, alpha=.5)
+        plt.xlabel("Expected order statistics")
+        plt.ylabel("t-statistic")
+        plt.xlim(-4, 4)
+        plt.ylim(-4, 4)
+        #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
+        plt.subplots_adjust(left=.15, right=.9, top=.9, bottom=.15)
+        plt.savefig(outDir + 'tstat_SAM_plot.eps', dpi=1200) 
+        plt.close()
+
+        #curiousity -- do we get uniform dist of pvals for permutation? yes :)
+        def reality_check(pvals_allK, outDir):
+            pval_null = plt.figure()
+            plt.scatter(np.array(range(len(pvals_allK))), np.sort(pvals_allK),s=1)
+            xvals = np.linspace(0,len(pvals_allK),1000)
+            plt.plot(xvals, xvals/len(pvals_allK), 'g-', lw=1, alpha=.5)
+            plt.savefig(outDir + 'pval_null_plot.eps', dpi=1200)
+            plt.close()
+        #reality_check(pvals_allK, outDir)
+
+        #plot of ordered pvals with BH threshold line
+        def plot_BH(pvals, outDir):
+            """Plot ordered pvals with Benjamini-Hochberg line
+
+            """
+            pval_scatter = plt.figure(figsize=(4,4))
+            plt.scatter(np.array(range(len(pvals))), np.sort(pvals), 
+                alpha=.5, s=3, edgecolors='face')
+            #BH threshold is FDR*j/#features
+            xvals = np.linspace(0,len(pvals),1000)
+            plt.plot(xvals, xvals*FDR/len(pvals), 'r--', lw=1)
+            #intersection of BH threshold and ordered pvals
+            #plt.axvline(x=318, ymin=-10, ymax=10,  color='gray', lw=1)
+            #uniform distribution
+            plt.plot(xvals, xvals/len(pvals), 'g-', lw=1, alpha=.5)
+            plt.xlabel("Molecular features ordered by p-value")
+            plt.ylabel("p-value")
+            plt.xlim(-10,760)
+            plt.ylim(-.05,1.05)
+            #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
+            plt.subplots_adjust(left=.15, right=.9, top=.9, bottom=.15)
+            plt.savefig(outDir + 'pval_BH_plot.eps', dpi=1200) 
+            plt.close() 
+        #plot_BH(pvals, outDir)
+             
+
     ## Analysis with chosen subsets of LCMS features ##
     if run_BestSubset == True:
-        #Output predicted probabilities and performance results csv
+        #Output csv files with predicted probabilities and performance results
         J = 6 #select up to J top LCMS features
-        subsetAlg = "ttest" #options: "topRF","ttest"
+        subsetAlg = "topRF" #options: "topRF","ttest"
         bestSubset_analysis(inputsDir, inClinData, inLCMSData,
                     NoInitialDHF, NoOFI, outcome, predictors_prelim, 
                     include_study_dum, include_imp_dums, imp_dums_only, 
