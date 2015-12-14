@@ -23,7 +23,9 @@ def parse_arguments():
 def main():
     
     inDir, outDir = parse_arguments() #filenames will be a list
-    sample = 'D5' #D1 is serum, D3 is saliva, D5 is urine (all normal phase)
+    #D1 is serum, D3 is saliva, D5 is urine (all normal phase)
+    #RPD1 is reverse phase serum from first batch
+    sample = 'D5'
     if sample == 'D1':
         inFname = "comboD1_filter50n_wImpRF1"
         outFname = "MassHuntNP" #name of pickled data frame to create
@@ -33,6 +35,10 @@ def main():
     elif sample == 'D5':
         inFname = "comboD5_filter50n_wImpRF1"
         outFname = "UrineMH" #name of pickled data frame to create
+    elif sample == 'RPD1':
+        inFname = "091715_deng_QC_temp_nofillpeaks_copy"
+        #RunOrder_PatientID_Unimportant_RepNumber. 
+        #There are three technical reps for each patient. 
 
     # prepare data so it will properly merge with clinical data on code, Study, Cod_Nin
     NP_MH = pd.read_csv(inDir + inFname + '.txt', sep='\t')

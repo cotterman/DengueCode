@@ -107,9 +107,9 @@ def create_LCMS_topJ_barplot(ginfo):
     method_list = ['M3','M2','M1'] #M1 will be high on graph (good)
 
     ## Prepare data to be graphed    
-    ttestDF = pd.read_csv(outDir + 'R_BestSubset_ttest_NPserum.txt', sep=",")
+    ttestDF = pd.read_csv(outDir + 'R_OFIDF.v.DHFDSS_BestSubset_ttest_NPserum.txt', sep=",")
     ttestDF['mlabel'] = ttestDF['Unnamed: 0']
-    topRFDF = pd.read_csv(outDir + 'R_BestSubset_topRF_NPserum.txt', sep=",")
+    topRFDF = pd.read_csv(outDir + 'R_OFIDF.v.DHFDSS_BestSubset_topRF_NPserum.txt', sep=",")
     topRFDF['mlabel'] = topRFDF['Unnamed: 0']
 
     ## To fill in during loop
@@ -175,7 +175,7 @@ def create_LCMS_topJ_barplot(ginfo):
     leg = plt.legend((lhandles), (method_labels[::-1]), ncol=3)
     #plt.tight_layout()
 
-    plt.savefig(outDir + 'LCMS_subsets.eps', dpi=1200) 
+    plt.savefig(outDir + 'LCMS_subsets_OFIDF.v.DHFDSS.eps', dpi=1200) 
     plt.close()  
 
 def create_LCMS_barplot(ginfo, LCMScompare):

@@ -1127,9 +1127,11 @@ def bestSubset_predictions(inputsDir, inClinData, inLCMSData,
 
     #obtain predictions using same data fed to get_topJ, but with only topJ LCMS vars
     cv_gen = cv.StratifiedKFold(y_allLCMS, n_folds=3, shuffle=True, random_state=10)
-    for j in range(J) + [J] + [744]:
+    LCMS_var_count = sum( [len(re.findall("MZ_", var)) for var in predictors_all] )
+    print LCMS_var_count, " LCMS features in data."
+    for j in range(J) + [J] + [LCMS_var_count]:
         print "******* Running for top " , j , "LCMS vars, method " , subsetMethod , " *******"
-        if j < 999:
+        if j < LCMS_var_count:
             X_reduced, predictors_reduced = TopJ_and_clin(
                 X_allLCMS, predictors_all, topJ_indices, j)
         else:
@@ -1181,6 +1183,137 @@ def bestSubset_analysis(inputsDir, inClinData, inLCMSData,
     resultsSub.to_csv(outDir+ 'R_BestSubset_' + subsetAlg + '_NPserum.txt', sep=",")
 
     return 
+
+def run_ttests(X,y,permute):
+    tstats = []
+    pvals = []
+    for i in xrange(X.shape[1]):
+        if permute == True:
+            #permutation will be different for each feature.
+            y = np.random.permutation(y)
+        s_neg = X[y==0, i]
+        s_pos = X[y==1, i]
+        tstat, pval = stats.ttest_ind(s_neg, s_pos, equal_var=True)
+        tstats.append(tstat)
+        pvals.append(pval)
+    tstats_ordered = np.sort(np.array(tstats))
+    pvals = np.array(pvals)
+    return tstats_ordered, pvals
+
+def get_permute_stats(X, y, K):
+    """get K permuted t-stats and p-vals for each LCMS feature
+    """
+    for i in xrange(K):
+        tstats_ordered_perm, pvals_perm = run_ttests(X, y, permute=True)
+        if i == 0:
+            tstats_allK = tstats_ordered_perm 
+            pvals_allK = pvals_perm       
+        else:
+            tstats_allK = np.vstack((tstats_allK, tstats_ordered_perm))
+            pvals_allK = np.hstack((pvals_allK, pvals_perm))
+    #ordered stat i is the average ordered stat i across the K values 
+    stats_ordered_permute = np.mean(tstats_allK, axis=0)  
+    return pvals_allK, tstats_allK, stats_ordered_permute
+
+def find_delta_for_SAM(stats_ordered_permute, tstats_ordered, tstats_allK, FDR, K):
+    """find the delta that gives desired FDR
+    """
+    tstat_diff = stats_ordered_permute - tstats_ordered
+    deltas_to_try = np.arange(.05, 1.5, .05)
+    for i, delta in enumerate(deltas_to_try):
+        print "Delta: " , delta
+        called_bool = np.abs(tstat_diff) > delta
+        called = tstats_ordered[called_bool==True, ]
+        smallest_pos = min(called[called>0,])
+        print "smallest_pos: " , smallest_pos
+        largest_neg = max(called[called<0,])
+        print "largest_neg: " , largest_neg
+        #number of features called significant 
+        called_count = np.sum(called_bool)
+        print "called_count: " , called_count
+        #number of falsely significant genes under the null
+        false_call1 = tstats_allK[tstats_allK < largest_neg,]
+        false_call2 = tstats_allK[tstats_allK > smallest_pos,]
+        false_call_count = (len(false_call1) + len(false_call2)) / float(K)
+        print "false_call_count: " , false_call_count
+        #FDR is number of false positives under null divided by number called significant
+        FDR_est = false_call_count / float(called_count)
+        print "FDR_est: " , FDR_est
+        if FDR_est < FDR:
+            print "Found a winner"
+            return delta
+        elif i == len(deltas_to_try)-1:
+            print "No winner found"
+            return .4  
+
+def make_hist_of_tstats(tstats_ordered, stats_ordered_permute, outDir):
+    tstat_hist = plt.figure(figsize=(4,4))
+    bins = np.linspace(-5, 5, 40)
+    plt.hist(tstats_ordered, bins, normed=True, color='aqua', alpha=.5)
+    #for null distribution, plot all t-stats from permutation (=K*744)
+    plt.hist(stats_ordered_permute, bins, normed=True, histtype='step', 
+            color='purple', lw=1)
+    plt.axvline(x=0, ymin=0, ymax=10,  color='gold', linestyle='-', lw=1)
+    plt.xlim(-6,6)
+    plt.xlabel("t-statistics")
+    #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
+    plt.subplots_adjust(left=.12, right=.9, top=.9, bottom=.15)
+    plt.savefig(outDir + 'LCMS_tstat_hist.eps', dpi=1200) 
+    plt.close() 
+
+def make_SAM_plot(stats_ordered_permute, tstats_ordered, best_delta, outDir):
+    """plot of expected ordered t-stats vs. actual ordered t-stats (SAM)
+    """
+    SAM_scatter = plt.figure(figsize=(6.7,6.7))
+    plt.scatter(stats_ordered_permute, tstats_ordered, s=3, alpha=.5)
+    #45 degree line
+    xvals = np.linspace(-4, 4, 10000)
+    plt.plot(xvals, xvals, 'g-', lw=.5, alpha=.5)
+    #display SAM threshold band
+    plt.plot(xvals, xvals - best_delta, 'r-', lw=.5, alpha=.5)
+    plt.plot(xvals, xvals + best_delta, 'r-', lw=.5, alpha=.5)
+    plt.xlabel("Expected order statistics")
+    plt.ylabel("t-statistic")
+    plt.xlim(-4, 4)
+    plt.ylim(-4, 4)
+    #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
+    plt.subplots_adjust(left=.15, right=.9, top=.9, bottom=.15)
+    plt.savefig(outDir + 'tstat_SAM_plot.eps', dpi=1200) 
+    plt.close()
+
+def plot_BH(pvals, outDir, FDR):
+    """Plot ordered pvals with Benjamini-Hochberg line
+
+    """
+    pval_scatter = plt.figure(figsize=(4,4))
+    plt.scatter(np.array(range(len(pvals))), np.sort(pvals), 
+        alpha=.5, s=3, edgecolors='face')
+    #BH threshold is FDR*j/#features
+    xvals = np.linspace(0,len(pvals),1000)
+    plt.plot(xvals, xvals*FDR/len(pvals), 'r--', lw=1)
+    #intersection of BH threshold and ordered pvals
+    #plt.axvline(x=318, ymin=-10, ymax=10,  color='gray', lw=1)
+    #uniform distribution
+    plt.plot(xvals, xvals/len(pvals), 'g-', lw=1, alpha=.5)
+    plt.xlabel("Molecular features ordered by p-value")
+    plt.ylabel("p-value")
+    plt.xlim(-10,760)
+    plt.ylim(-.05,1.05)
+    #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
+    plt.subplots_adjust(left=.15, right=.9, top=.9, bottom=.15)
+    plt.savefig(outDir + 'pval_BH_plot.eps', dpi=1200) 
+    plt.close() 
+
+def reality_check(pvals_allK, outDir):
+    """verify pvals from permutation are uniformly distributed btwn 0 and 1
+    """
+    pval_null = plt.figure()
+    plt.scatter(np.array(range(len(pvals_allK))), np.sort(pvals_allK),s=1)
+    xvals = np.linspace(0,len(pvals_allK),1000)
+    plt.plot(xvals, xvals/len(pvals_allK), 'g-', lw=1, alpha=.5)
+    plt.savefig(outDir + 'pval_null_plot.eps', dpi=1200)
+    plt.close()
+
 
 def parse_arguments():
     """Parse arguments provided at the command line level
@@ -1273,8 +1406,8 @@ def main():
         only_VIM2 = False # true if just want to plot VIM2 (and not other VIMs)
 
         ## Choose outcome variable ##
-        outcome = "is.DEN"  
-        #outcome = "is.DHF_DSS"
+        #outcome = "is.DEN"  
+        outcome = "is.DHF_DSS"
 
         ## Choose whether to exclude OFI patients ##
         NoOFI = False #only applies to is.DHF_DSS analyses
@@ -1432,9 +1565,10 @@ def main():
     ## Analysis of LCMS feature significance (FDR analysis) ##
     if run_FDR == True:
 
+        #set parameter values
         FDR = .20
-        K = 1000
-        
+        K = 1000 #number of permutations to run (about 30 min for K=10,000)
+             
         #obtain LCMS data with diagnostic outcome (but not other covariates)
         include_clinvars = False 
         include_LCMSvars = True
@@ -1449,134 +1583,27 @@ def main():
         y = df[outcome].astype(int).values 
         print "type and y.shape: " , type(y), y.shape
 
-        def run_ttests(X,y,permute):
-            tstats = []
-            pvals = []
-            for i in xrange(X.shape[1]):
-                if permute == True:
-                    #permutation will be different for each feature.
-                    y = np.random.permutation(y)
-                s_neg = X[y==0, i]
-                s_pos = X[y==1, i]
-                tstat, pval = stats.ttest_ind(s_neg, s_pos, equal_var=True)
-                tstats.append(tstat)
-                pvals.append(pval)
-            tstats_ordered = np.sort(np.array(tstats))
-            pvals = np.array(pvals)
-            return tstats_ordered, pvals
-
         #obtain actual t-stats and p-vals from data for each LCMS feature
         tstats_ordered, pvals = run_ttests(X, y, permute=False)
 
+        #plot of ordered pvals with BH threshold line
+        plot_BH(pvals, outDir, FDR)
+
         #get K permuted t-stats and p-vals for each LCMS feature
-        for i in xrange(K):
-            tstats_ordered_perm, pvals_perm = run_ttests(X, y, permute=True)
-            if i == 0:
-                tstats_allK = tstats_ordered_perm 
-                pvals_allK = pvals_perm       
-            else:
-                tstats_allK = np.vstack((tstats_allK, tstats_ordered_perm))
-                pvals_allK = np.hstack((pvals_allK, pvals_perm))
-        #ordered stat i is the average ordered stat i across the K values 
-        stats_ordered_permute = np.mean(tstats_allK, axis=0)  
+        pvals_allK, tstats_allK, stats_ordered_permute = get_permute_stats(X, y, K)
 
         #find the delta that gives desired FDR
-        tstat_diff = stats_ordered_permute - tstats_ordered
-        deltas_to_try = np.arange(.05, 1.5, .05)
-        for i, delta in enumerate(deltas_to_try):
-            print "Delta: " , delta
-            called_bool = np.abs(tstat_diff) > delta
-            called = tstats_ordered[called_bool==True, ]
-            smallest_pos = min(called[called>0,])
-            print "smallest_pos: " , smallest_pos
-            largest_neg = max(called[called<0,])
-            print "largest_neg: " , largest_neg
-            #number of features called significant 
-            called_count = np.sum(called_bool)
-            print "called_count: " , called_count
-            #number of falsely significant genes under the null
-            false_call1 = tstats_allK[tstats_allK < largest_neg,]
-            false_call2 = tstats_allK[tstats_allK > smallest_pos,]
-            false_call_count = (len(false_call1) + len(false_call2)) / float(K)
-            print "false_call_count: " , false_call_count
-            #FDR is number of false positives under null divided by number called significant
-            FDR_est = false_call_count / float(called_count)
-            print "FDR_est: " , FDR_est
-            if FDR_est < FDR:
-                print "Found a winner"
-                best_delta = delta
-                break
-            elif i == len(deltas_to_try)-1:
-                print "No winner found"
-                best_delta = .4      
+        best_delta = find_delta_for_SAM(stats_ordered_permute, tstats_ordered, 
+                                        tstats_allK, FDR, K)    
 
         #histogram of t-stats
-        tstat_hist = plt.figure(figsize=(4,4))
-        bins = np.linspace(-5, 5, 40)
-        plt.hist(tstats_ordered, bins, normed=True, color='aqua', alpha=.5)
-        #for null distribution, plot all t-stats from permutation (=K*744)
-        plt.hist(stats_ordered_permute, bins, normed=True, histtype='step', 
-                color='purple', lw=1)
-        plt.axvline(x=0, ymin=0, ymax=10,  color='gold', linestyle='-', lw=1)
-        plt.xlim(-6,6)
-        plt.xlabel("t-statistics")
-        #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
-        plt.subplots_adjust(left=.12, right=.9, top=.9, bottom=.15)
-        plt.savefig(outDir + 'LCMS_tstat_hist.eps', dpi=1200) 
-        plt.close() 
+        make_hist_of_tstats(tstats_ordered, stats_ordered_permute, outDir)
 
         #plot of expected ordered t-stats vs. actual ordered t-stats (SAM)
-        SAM_scatter = plt.figure(figsize=(6.7,6.7))
-        plt.scatter(stats_ordered_permute, tstats_ordered, s=3, alpha=.5)
-        #45 degree line
-        xvals = np.linspace(-4, 4, 10000)
-        plt.plot(xvals, xvals, 'g-', lw=.5, alpha=.5)
-        #display SAM threshold band
-        plt.plot(xvals, xvals - best_delta, 'r-', lw=.5, alpha=.5)
-        plt.plot(xvals, xvals + best_delta, 'r-', lw=.5, alpha=.5)
-        plt.xlabel("Expected order statistics")
-        plt.ylabel("t-statistic")
-        plt.xlim(-4, 4)
-        plt.ylim(-4, 4)
-        #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
-        plt.subplots_adjust(left=.15, right=.9, top=.9, bottom=.15)
-        plt.savefig(outDir + 'tstat_SAM_plot.eps', dpi=1200) 
-        plt.close()
+        make_SAM_plot(stats_ordered_permute, tstats_ordered, best_delta, outDir)
 
         #curiousity -- do we get uniform dist of pvals for permutation? yes :)
-        def reality_check(pvals_allK, outDir):
-            pval_null = plt.figure()
-            plt.scatter(np.array(range(len(pvals_allK))), np.sort(pvals_allK),s=1)
-            xvals = np.linspace(0,len(pvals_allK),1000)
-            plt.plot(xvals, xvals/len(pvals_allK), 'g-', lw=1, alpha=.5)
-            plt.savefig(outDir + 'pval_null_plot.eps', dpi=1200)
-            plt.close()
         #reality_check(pvals_allK, outDir)
-
-        #plot of ordered pvals with BH threshold line
-        def plot_BH(pvals, outDir):
-            """Plot ordered pvals with Benjamini-Hochberg line
-
-            """
-            pval_scatter = plt.figure(figsize=(4,4))
-            plt.scatter(np.array(range(len(pvals))), np.sort(pvals), 
-                alpha=.5, s=3, edgecolors='face')
-            #BH threshold is FDR*j/#features
-            xvals = np.linspace(0,len(pvals),1000)
-            plt.plot(xvals, xvals*FDR/len(pvals), 'r--', lw=1)
-            #intersection of BH threshold and ordered pvals
-            #plt.axvline(x=318, ymin=-10, ymax=10,  color='gray', lw=1)
-            #uniform distribution
-            plt.plot(xvals, xvals/len(pvals), 'g-', lw=1, alpha=.5)
-            plt.xlabel("Molecular features ordered by p-value")
-            plt.ylabel("p-value")
-            plt.xlim(-10,760)
-            plt.ylim(-.05,1.05)
-            #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
-            plt.subplots_adjust(left=.15, right=.9, top=.9, bottom=.15)
-            plt.savefig(outDir + 'pval_BH_plot.eps', dpi=1200) 
-            plt.close() 
-        #plot_BH(pvals, outDir)
              
 
     ## Analysis with chosen subsets of LCMS features ##
