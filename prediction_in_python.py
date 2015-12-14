@@ -20,6 +20,7 @@ from pandas.core.categorical import Categorical
 import matplotlib as mpl
 mpl.use('Agg') #avoids running an X server (to avoid errors with remote runs)
 import matplotlib.pyplot as plt
+import matplotlib.mlab as mlab
 #import matplotlib.pyplot as plt; plt.rcdefaults()
 #from matplotlib import style
 #from matplotlib_style_utils import rstyle
@@ -1215,11 +1216,25 @@ def get_permute_stats(X, y, K):
     stats_ordered_permute = np.mean(tstats_allK, axis=0)  
     return pvals_allK, tstats_allK, stats_ordered_permute
 
-def find_delta_for_SAM(stats_ordered_permute, tstats_ordered, tstats_allK, FDR, K):
+def find_delta_for_SAM(stats_ordered_permute, tstats_ordered, tstats_allK,
+                     FDR, K, scaleMe):
     """find the delta that gives desired FDR
     """
+    #have to make adjustments for kink when using scaleMe
+    if scaleMe==True:
+        #take out the region corresponding to imposed zeros
+        cut_start = np.searchsorted(tstats_ordered, 0)
+        cut_stop = np.searchsorted(tstats_ordered, 0, side='right')
+        margin = 300
+        stats_ordered_permute = np.hstack((stats_ordered_permute[:cut_start-margin],
+                                           stats_ordered_permute[cut_stop+margin:]))
+        tstats_ordered = np.hstack((tstats_ordered[:cut_start-margin],
+                                           tstats_ordered[cut_stop+margin:]))
     tstat_diff = stats_ordered_permute - tstats_ordered
-    deltas_to_try = np.arange(.05, 1.5, .05)
+    print "stats_ordered_permute: " , stats_ordered_permute
+    print "tstats_ordered: " , tstats_ordered
+    print "tstat_diff: " , tstat_diff
+    deltas_to_try = np.arange(.05, 1.7, .05)
     for i, delta in enumerate(deltas_to_try):
         print "Delta: " , delta
         called_bool = np.abs(tstat_diff) > delta
@@ -1232,9 +1247,9 @@ def find_delta_for_SAM(stats_ordered_permute, tstats_ordered, tstats_allK, FDR, 
         called_count = np.sum(called_bool)
         print "called_count: " , called_count
         #number of falsely significant genes under the null
-        false_call1 = tstats_allK[tstats_allK < largest_neg,]
-        false_call2 = tstats_allK[tstats_allK > smallest_pos,]
-        false_call_count = (len(false_call1) + len(false_call2)) / float(K)
+        false_call1 = stats_ordered_permute[stats_ordered_permute < largest_neg,]
+        false_call2 = stats_ordered_permute[stats_ordered_permute > smallest_pos,]
+        false_call_count = (len(false_call1) + len(false_call2)) 
         print "false_call_count: " , false_call_count
         #FDR is number of false positives under null divided by number called significant
         FDR_est = false_call_count / float(called_count)
@@ -1246,26 +1261,85 @@ def find_delta_for_SAM(stats_ordered_permute, tstats_ordered, tstats_allK, FDR, 
             print "No winner found"
             return .4  
 
-def make_hist_of_tstats(tstats_ordered, stats_ordered_permute, outDir):
+def scale_stats(stats_ordered_permute, tstats_ordered, X, nfeatures_orig):
+    """Create faux data to compensate for pre-screening of features by lab
+    """
+
+    n_to_add = nfeatures_orig - len(tstats_ordered)
+    df = X.shape[0] - 2 #degrees of freedom for t dist
+  
+    #create additional tstats (draw from t distribution)
+        #want to have nfeatures_orig - nfeatures_postScreen
+    for i in xrange(10):
+        tstats_ordered_perm = np.sort(np.random.standard_t(df, n_to_add))
+        if i == 0:
+            tstats_allK = tstats_ordered_perm       
+        else:
+            tstats_allK = np.vstack((tstats_allK, tstats_ordered_perm))
+    #ordered stat i is the average ordered stat i across the K values 
+    stats_to_add = np.mean(tstats_allK, axis=0) 
+
+    #combine with the tstats from permutated data
+    new_stats_permute = np.sort(np.hstack((stats_ordered_permute, stats_to_add)))
+
+    #as a "worst case", assume t-stat was 0 for features that were dropped
+    ind = np.searchsorted(tstats_ordered, 0) #location to insert
+    new_tstats_ordered = np.insert(tstats_ordered, ind, np.zeros(n_to_add))
+    
+    return new_tstats_ordered, new_stats_permute
+
+
+def make_hist_of_tstats(tstats_ordered, stats_ordered_permute, 
+                        outDir, outcome, inLCMSData, nfeatures_orig, scaleMe=False):
+    """Histogram of t-stats using input:
+        tstats_ordered are tstats based on data
+        stats_ordered_permute are tstats based on permutation of data
+        nfeatures_orig is number of features in data before pre-screening
+    """ 
     tstat_hist = plt.figure(figsize=(4,4))
     bins = np.linspace(-5, 5, 40)
-    plt.hist(tstats_ordered, bins, normed=True, color='aqua', alpha=.5)
+    #plot actual t-stats
+    #re-norm t-stats so sum of area is (nfeatures_postScreen/nfeatures_orig) rather than 1
+    if inLCMSData=="MassHuntNP" and scaleMe==True:
+        scaleFactor = len(tstats_ordered) / float(nfeatures_orig)
+        print "Scaling tstat histogram by factor of " , scaleFactor
+        hist, bins = np.histogram(tstats_ordered, bins, normed=True)
+        plt.bar(bins[:-1], hist*scaleFactor, width=bins[1]-bins[0], color='aqua')
+    else:
+        plt.hist(tstats_ordered, bins, normed=True, color='aqua', alpha=.5)
     #for null distribution, plot all t-stats from permutation (=K*744)
     plt.hist(stats_ordered_permute, bins, normed=True, histtype='step', 
             color='purple', lw=1)
     plt.axvline(x=0, ymin=0, ymax=10,  color='gold', linestyle='-', lw=1)
-    plt.xlim(-6,6)
+    #for another null distribution, plot the normal dist (~t-dist)
+    x = np.linspace(-6,6,100)
+    sigma = math.sqrt(np.var(tstats_ordered)/len(tstats_ordered))
+    print "sigma is " , sigma
+    plt.plot(x, mlab.normpdf(x, 0, 1), color="grey", lw=1)
+    #set graph parameters
+    plt.xlim(-6, 6)
+    if scaleMe==True:
+        #need close-up if we have scaled down values
+        plt.ylim(0,.05)
+        suffix = "_scaled"
+    else:
+        suffix = ""
     plt.xlabel("t-statistics")
     #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
     plt.subplots_adjust(left=.12, right=.9, top=.9, bottom=.15)
-    plt.savefig(outDir + 'LCMS_tstat_hist.eps', dpi=1200) 
+    plt.savefig(outDir + outcome + '_LCMS_tstat_hist_' + inLCMSData + suffix + '.eps', dpi=1200) 
     plt.close() 
 
-def make_SAM_plot(stats_ordered_permute, tstats_ordered, best_delta, outDir):
+def make_SAM_plot(stats_ordered_permute, tstats_ordered, best_delta, 
+                outDir, outcome, inLCMSData, scaleMe=False):
     """plot of expected ordered t-stats vs. actual ordered t-stats (SAM)
     """
     SAM_scatter = plt.figure(figsize=(6.7,6.7))
+    #based on permuted data
     plt.scatter(stats_ordered_permute, tstats_ordered, s=3, alpha=.5)
+    #based on t distribution
+    #stats_ordered_tdist = np.sort(np.random.standard_t(df=86, size=len(tstats_ordered)))
+    #plt.scatter(stats_ordered_tdist, tstats_ordered, s=3, alpha=.5, color='g')
     #45 degree line
     xvals = np.linspace(-4, 4, 10000)
     plt.plot(xvals, xvals, 'g-', lw=.5, alpha=.5)
@@ -1276,12 +1350,16 @@ def make_SAM_plot(stats_ordered_permute, tstats_ordered, best_delta, outDir):
     plt.ylabel("t-statistic")
     plt.xlim(-4, 4)
     plt.ylim(-4, 4)
+    if scaleMe==True:
+        suffix = "_scaled"
+    else:
+        suffix = ""
     #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
     plt.subplots_adjust(left=.15, right=.9, top=.9, bottom=.15)
-    plt.savefig(outDir + 'tstat_SAM_plot.eps', dpi=1200) 
+    plt.savefig(outDir + outcome + '_tstat_SAM_plot_' + inLCMSData + suffix + '.eps', dpi=1200) 
     plt.close()
 
-def plot_BH(pvals, outDir, FDR):
+def plot_BH(pvals, outDir, FDR, outcome, inLCMSData, nfeatures_orig, scaleMe=False):
     """Plot ordered pvals with Benjamini-Hochberg line
 
     """
@@ -1290,18 +1368,31 @@ def plot_BH(pvals, outDir, FDR):
         alpha=.5, s=3, edgecolors='face')
     #BH threshold is FDR*j/#features
     xvals = np.linspace(0,len(pvals),1000)
-    plt.plot(xvals, xvals*FDR/len(pvals), 'r--', lw=1)
+    if inLCMSData=="MassHuntNP" and scaleMe==True:
+        plt.plot(xvals, xvals*FDR/float(nfeatures_orig), 'r--', lw=1)
+    else:
+        plt.plot(xvals, xvals*FDR/float(len(pvals)), 'r--', lw=1)
     #intersection of BH threshold and ordered pvals
     #plt.axvline(x=318, ymin=-10, ymax=10,  color='gray', lw=1)
     #uniform distribution
     plt.plot(xvals, xvals/len(pvals), 'g-', lw=1, alpha=.5)
     plt.xlabel("Molecular features ordered by p-value")
     plt.ylabel("p-value")
-    plt.xlim(-10,760)
-    plt.ylim(-.05,1.05)
+    if scaleMe==True:
+        if outcome=="is.DHF_DSS":
+            plt.xlim(-1,50) 
+            plt.ylim(-.000005,.0005) 
+        else:
+            plt.xlim(-5,200)
+            plt.ylim(-.0001,.002)
+        suffix = "_scaled"
+    else:
+        plt.xlim(-10,760)
+        plt.ylim(-.05,1.05)
+        suffix = ""
     #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
     plt.subplots_adjust(left=.15, right=.9, top=.9, bottom=.15)
-    plt.savefig(outDir + 'pval_BH_plot.eps', dpi=1200) 
+    plt.savefig(outDir + outcome + '_pval_BH_plot_' + inLCMSData + suffix + '.eps', dpi=1200) 
     plt.close() 
 
 def reality_check(pvals_allK, outDir):
@@ -1313,6 +1404,55 @@ def reality_check(pvals_allK, outDir):
     plt.plot(xvals, xvals/len(pvals_allK), 'g-', lw=1, alpha=.5)
     plt.savefig(outDir + 'pval_null_plot.eps', dpi=1200)
     plt.close()
+
+
+def FDR_analysis(FDR, K, scaleMe, nfeatures_orig, inputsDir, inClinData, inLCMSData,
+            NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
+            outcome, predictors_prelim, 
+            include_study_dum, include_imp_dums, imp_dums_only, std_vars, outDir):   
+    """Run several FDR related analyses and produce corresponding graphs
+
+    """
+    #obtain LCMS data with diagnostic outcome (but not other covariates)
+    include_clinvars = False 
+    include_LCMSvars = True
+    df, predictors = get_data(inputsDir, inClinData, inLCMSData,
+                NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
+                outcome, predictors_prelim, 
+                include_study_dum, include_imp_dums, imp_dums_only, 
+                include_clinvars, include_LCMSvars, standardize=std_vars)
+    X_orig = df[predictors].astype(float).values
+    X = preprocessing.scale(X_orig) #standardized values
+    print "type and X.shape: " , type(X), X.shape
+    y = df[outcome].astype(int).values 
+    print "type and y.shape: " , type(y), y.shape        
+
+    #obtain actual t-stats and p-vals from data for each LCMS feature
+    tstats_ordered, pvals = run_ttests(X, y, permute=False)
+
+    #plot of ordered pvals with BH threshold line
+    plot_BH(pvals, outDir, FDR, outcome, inLCMSData, nfeatures_orig, scaleMe)
+
+    #get K permuted t-stats and p-vals for each LCMS feature
+    pvals_allK, tstats_allK, stats_ordered_permute = get_permute_stats(X, y, K)
+
+    #histogram of t-stats
+    make_hist_of_tstats(tstats_ordered, stats_ordered_permute, 
+            outDir, outcome, inLCMSData, nfeatures_orig, scaleMe)
+
+    #find the delta that gives desired FDR for SAM method and make SAM plot
+    if inLCMSData=="MassHuntNP" and scaleMe==True:
+        #create modified tstat arrays to account for # of originally extracted features
+        tstats_ordered, stats_ordered_permute = scale_stats(
+                stats_ordered_permute, tstats_ordered, X, nfeatures_orig)
+    best_delta = find_delta_for_SAM(stats_ordered_permute, tstats_ordered, 
+                                tstats_allK, FDR, K, scaleMe)    
+    #plot of expected ordered t-stats vs. actual ordered t-stats (SAM)
+    make_SAM_plot(stats_ordered_permute, tstats_ordered, best_delta, 
+            outDir, outcome, inLCMSData, scaleMe)
+
+    #curiousity -- do we get uniform dist of pvals for permutation? yes :)
+    #reality_check(pvals_allK, outDir)
 
 
 def parse_arguments():
@@ -1564,53 +1704,23 @@ def main():
 
     ## Analysis of LCMS feature significance (FDR analysis) ##
     if run_FDR == True:
-
         #set parameter values
         FDR = .20
-        K = 1000 #number of permutations to run (about 30 min for K=10,000)
-             
-        #obtain LCMS data with diagnostic outcome (but not other covariates)
-        include_clinvars = False 
-        include_LCMSvars = True
-        df, predictors = get_data(inputsDir, inClinData, inLCMSData,
+        K = 1000 #number of permutations to run (about 30 min for K=10,000) 
+        scaleMe = True #true for calcs to do worst case scenario based on original #features
+        nfeatures_orig = 15930 #15930 was reported as # features before filtering (MassHuntNP)
+        #run analyses and create FDR related graphs
+        FDR_analysis(FDR, K, scaleMe, nfeatures_orig, inputsDir, inClinData, inLCMSData,
                     NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
-                    outcome, predictors_prelim, 
-                    include_study_dum, include_imp_dums, imp_dums_only, 
-                    include_clinvars, include_LCMSvars, standardize=std_vars)
-        X_orig = df[predictors].astype(float).values
-        X = preprocessing.scale(X_orig) #standardized values
-        print "type and X.shape: " , type(X), X.shape
-        y = df[outcome].astype(int).values 
-        print "type and y.shape: " , type(y), y.shape
-
-        #obtain actual t-stats and p-vals from data for each LCMS feature
-        tstats_ordered, pvals = run_ttests(X, y, permute=False)
-
-        #plot of ordered pvals with BH threshold line
-        plot_BH(pvals, outDir, FDR)
-
-        #get K permuted t-stats and p-vals for each LCMS feature
-        pvals_allK, tstats_allK, stats_ordered_permute = get_permute_stats(X, y, K)
-
-        #find the delta that gives desired FDR
-        best_delta = find_delta_for_SAM(stats_ordered_permute, tstats_ordered, 
-                                        tstats_allK, FDR, K)    
-
-        #histogram of t-stats
-        make_hist_of_tstats(tstats_ordered, stats_ordered_permute, outDir)
-
-        #plot of expected ordered t-stats vs. actual ordered t-stats (SAM)
-        make_SAM_plot(stats_ordered_permute, tstats_ordered, best_delta, outDir)
-
-        #curiousity -- do we get uniform dist of pvals for permutation? yes :)
-        #reality_check(pvals_allK, outDir)
-             
+                    outcome, predictors_prelim,
+                    include_study_dum, include_imp_dums, imp_dums_only, std_vars, 
+                    outDir)            
 
     ## Analysis with chosen subsets of LCMS features ##
     if run_BestSubset == True:
         #Output csv files with predicted probabilities and performance results
         J = 6 #select up to J top LCMS features
-        subsetAlg = "topRF" #options: "topRF","ttest"
+        subsetAlg = "topRF" #options: "topRF","ttest", "greedyRF"
         bestSubset_analysis(inputsDir, inClinData, inLCMSData,
                     NoInitialDHF, NoOFI, outcome, predictors_prelim, 
                     include_study_dum, include_imp_dums, imp_dums_only, 
