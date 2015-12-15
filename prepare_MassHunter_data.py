@@ -67,14 +67,15 @@ def main():
     elif sample in ['RPD1']:
 
         df = pd.read_csv(inDir + inFname, sep=',')
+
+        ## Explore data ##
         print "Column names: " , list(df) #284 columns -- one for each person-sample-run
         print "Number of obs and of vars: " , df.shape #rows are for mz, rt, npeaks values
-        print "whatever"
-
         #are mz values currently unique? yes
         df['mz'].isnull().values.any() #no null values
         len(df['mz'].unique()) == len(df['mz']) #true
 
+        ## Fix data ##
         #transpose so each row is person-sample-run and each column is unique mz value
         df2 = df.transpose()
         #create column containing name of sample
@@ -86,7 +87,7 @@ def main():
         #eliminate rows that are QCs
             #Naming convention: RunOrder_PatientID_Unimportant_RepNumber. 
         
-        #change names of rows so they are simply person
+        #change names of rows so they are simply person ID
 
         #replace missing intensity values with zeros
 
@@ -94,7 +95,6 @@ def main():
             #Note: There are three technical reps for each patient.
 
         
-
 
         #get crosswalk from patient codes to all necessary info for merging with clinical data
         sampleMap = get_RP_batch1_crosswalk(clinDir)
