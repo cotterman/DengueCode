@@ -960,6 +960,79 @@ def plot_only_VIM2(resultsDFvim2):
     plt.yticks(positions, np.array(resultsDFvim2["varname"]))
     plt.savefig(outDir + "VIM2_only" + '.eps', dpi=1200)
 
+def subset_w_ttest(X, y, J, LCMS_indices):
+    #find test stat and pval for each LCMS variable 
+    tstats = []
+    t_indices = []
+    for i in LCMS_indices:
+        s_neg = X[y==0, i]
+        s_pos = X[y==1, i]
+        tstat, pval = stats.ttest_ind(s_neg, s_pos, equal_var=False)
+        #invoke pval criteria since high test stat is worthless if high pval
+        if pval<.05:
+            tstats.append(tstat)
+            t_indices.append(i)
+    tstats = np.array(t_indices)
+    t_indices = np.array(t_indices)
+    #indices in tstats of topJ LCMS features 
+    topJ_tindices = np.argpartition(tstats, -J)[-J:]
+    topJ_tindices = topJ_tindices[np.argsort(tstats[topJ_tindices])] #sorted
+    #original indices of the J features
+    topJ_indices = t_indices[topJ_tindices]
+    print "values of topJ_indices: " , tstats[topJ_tindices] 
+    return topJ_indices
+
+def subset_w_topRF(X, y, J, LCMS_indices):
+    #obtain array of variable importance scores
+    rf = RandomForestClassifier(random_state=101)
+    rf = rf.fit(X,y)
+    all_VIM_rf = rf.feature_importances_
+    #keep only LCMS features in ranked list
+    LCMS_VIM_rf = all_VIM_rf[LCMS_indices]
+    #indices in LCMS_VIM_rf of topJ LCMS features 
+    topJ_nindices = np.argpartition(LCMS_VIM_rf, -J)[-J:]
+    topJ_nindices = topJ_nindices[np.argsort(LCMS_VIM_rf[topJ_nindices])] #sorted
+    #original indices of these chosen features
+    topJ_indices = LCMS_indices[topJ_nindices]
+    print "values of topJ_indices: " , all_VIM_rf[topJ_indices]
+    return topJ_indices
+
+def add_one_more_index(LCMS_indices_totry, indices_of_covars, X, y, topJ_indices):
+    """Of the variables contained in LCMS_indices_totry, find one that does best
+            when combined with variables in indices_of_covars.
+        Return updated LCMS_indices_totry and indices_of_covars
+    """         
+    #cvAUC for RF done for each variable to find best var to add
+    resultsDF = pd.DataFrame() #empty df to hold performance measures
+    for i in LCMS_indices_totry:
+        X_i = X[:, np.hstack((indices_of_covars, i)) ] 
+        cv_gen = cv.StratifiedKFold(y, n_folds=3, shuffle=True, random_state=10)
+        p = X_i.shape[1] #number of variables
+        #print "X_i.shape " , X_i.shape, X_i
+        if p < 9:
+            RF_max_features = [ int(math.ceil(math.sqrt(p))) ]
+        else:
+            RF_max_features = [ int(math.ceil(math.sqrt(p))), int(math.ceil(p/3)) ]
+        RFparams = {'n_estimators':[500],  'max_features': RF_max_features}
+        #set parameters for GridSearchCV
+        n_jobs = 2
+        cv_grid = 3
+        RFtune = grid_search.GridSearchCV(RandomForestClassifier(), RFparams,
+                score_func=metrics.roc_auc_score, n_jobs = n_jobs, cv = cv_grid)
+        preds = cross_val_predict_proba(RFtune, X_i, y, cv_gen)[:, 1]
+        #the row index of resultsDF will equal i, the index that we care about 
+        resultsDF = get_performance_vals(y, preds, str(i), cv_gen, .95, resultsDF)
+    #find index of best LCMS variable
+    row_max = np.argmax(np.array(resultsDF['cvAUC'])) #row with highest cvAUC
+    index = int(resultsDF.index.tolist()[row_max]) #row index of this row
+    #print "resultsDF" , resultsDF
+    #print "row_max: ", row_max
+    print "index: " , index
+    #update which indices to try and which to include as covars for next round
+    LCMS_indices_totry = LCMS_indices_totry[np.where(LCMS_indices_totry!=index)]
+    indices_of_covars = np.hstack((indices_of_covars, [index]))
+    topJ_indices.append(index)
+    return LCMS_indices_totry, indices_of_covars, topJ_indices
 
 def get_topJ(X, y, predictors, J, subsetAlg):
     """Return the positions (in predictor list) of top LCMS predictors as numpy array
@@ -967,46 +1040,30 @@ def get_topJ(X, y, predictors, J, subsetAlg):
     """
     #find index numbers of LC-MS features
     LCMS_indices = []
+    nonLCMS_indices = []
     for counter, name in enumerate(predictors):
         f = re.findall("MZ_.*", name)
         assert len(f) in (0,1)
         if len(f)==1: LCMS_indices.append(counter)
+        elif len(f)==0: nonLCMS_indices.append(counter)
     LCMS_indices = np.array(LCMS_indices)
+    nonLCMS_indices = np.array(nonLCMS_indices)
 
     if subsetAlg=="ttest":
-        #find test stat and pval for each LCMS variable 
-        tstats = []
-        t_indices = []
-        for i in LCMS_indices:
-            s_neg = X[y==0, i]
-            s_pos = X[y==1, i]
-            tstat, pval = stats.ttest_ind(s_neg, s_pos, equal_var=False)
-            #invoke pval criteria since high test stat is worthless if high pval
-            if pval<.05:
-                tstats.append(tstat)
-                t_indices.append(i)
-        tstats = np.array(t_indices)
-        t_indices = np.array(t_indices)
-        #indices in tstats of topJ LCMS features 
-        topJ_tindices = np.argpartition(tstats, -J)[-J:]
-        topJ_tindices = topJ_tindices[np.argsort(tstats[topJ_tindices])] #sorted
-        #original indices of the J features
-        topJ_indices = t_indices[topJ_tindices]
-        print "values of topJ_indices: " , tstats[topJ_tindices]  
+        topJ_indices = subset_w_ttest(X, y, J, LCMS_indices) 
 
     elif subsetAlg=="topRF":
-        #obtain array of variable importance scores
-        rf = RandomForestClassifier(random_state=101)
-        rf = rf.fit(X,y)
-        all_VIM_rf = rf.feature_importances_
-        #keep only LCMS features in ranked list
-        LCMS_VIM_rf = all_VIM_rf[LCMS_indices]
-        #indices in LCMS_VIM_rf of topJ LCMS features 
-        topJ_nindices = np.argpartition(LCMS_VIM_rf, -J)[-J:]
-        topJ_nindices = topJ_nindices[np.argsort(LCMS_VIM_rf[topJ_nindices])] #sorted
-        #original indices of these chosen features
-        topJ_indices = LCMS_indices[topJ_nindices]
-        print "values of topJ_indices: " , all_VIM_rf[topJ_indices]
+        topJ_indices = subset_w_topRF(X, y, J, LCMS_indices)
+
+    elif subsetAlg=="greedyRF":
+        topJ_indices = []
+        LCMS_indices_totry = LCMS_indices
+        indices_of_covars = nonLCMS_indices
+        #add another index J times to get top J indices
+        for j in xrange(J):
+            LCMS_indices_totry, indices_of_covars, topJ_indices = add_one_more_index(
+                LCMS_indices_totry, indices_of_covars, X, y, topJ_indices)
+        topJ_indices = np.array(topJ_indices)    
 
     print "topJ_indices: " , topJ_indices
     
@@ -1131,6 +1188,7 @@ def bestSubset_predictions(inputsDir, inClinData, inLCMSData,
     LCMS_var_count = sum( [len(re.findall("MZ_", var)) for var in predictors_all] )
     print LCMS_var_count, " LCMS features in data."
     for j in range(J) + [J] + [LCMS_var_count]:
+    #for j in [J]: #testing
         print "******* Running for top " , j , "LCMS vars, method " , subsetMethod , " *******"
         if j < LCMS_var_count:
             X_reduced, predictors_reduced = TopJ_and_clin(
@@ -1170,7 +1228,7 @@ def bestSubset_analysis(inputsDir, inClinData, inLCMSData,
                 include_study_dum, include_imp_dums, imp_dums_only, std_vars, testlib)
 
     #predictions for LCMS patients using topJ LCMS features
-    for method in [1,2,3]: #do for all 3 subset methods
+    for method in [1, 2, 3]: # [1,2,3] to do for all 3 subset methods
         predsSub, resultsSub = bestSubset_predictions(inputsDir, inClinData, inLCMSData,
                 NoInitialDHF, NoOFI, outcome, predictors_prelim, 
                 include_study_dum, include_imp_dums, imp_dums_only, std_vars, testlib,
@@ -1179,9 +1237,9 @@ def bestSubset_analysis(inputsDir, inClinData, inLCMSData,
     print "resultsSub: " , resultsSub
     
     # print predicted probabilities to file (optional)
-    predsSub.to_csv(outDir+ 'P_BestSubset_' + subsetAlg + '_NPserum.txt', sep=",") 
+    predsSub.to_csv(outDir+ 'P_' + outcome + '_BestSubset_' + subsetAlg + '_NPserum.txt', sep=",") 
     ## Add columns with additional methods info, print results to text file ##
-    resultsSub.to_csv(outDir+ 'R_BestSubset_' + subsetAlg + '_NPserum.txt', sep=",")
+    resultsSub.to_csv(outDir+ 'R_' + outcome + '_BestSubset_' + subsetAlg + '_NPserum.txt', sep=",")
 
     return 
 
@@ -1536,8 +1594,8 @@ def main():
         run_SL = False # if false, can still run algorithms in library, but not SL
         plot_MainAnalysis = False  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
-        run_BestSubset = False # true means to find best subset of LCMS features and run SL with them
-        run_FDR = True #true means to do false discovery rate analysis
+        run_BestSubset = True # true means to find best subset of LCMS features and run SL with them
+        run_FDR = False #true means to do false discovery rate analysis
         #determine which variable importance code to run
         run_VIM = False  # if false, none of the VIM code will be run
         forget_VIM1 = False # if true, will do VIM analysis and graphs without VIM1 output
@@ -1565,7 +1623,7 @@ def main():
 
         ## Choose whether to include clinical variables and/or LCMS features ##
         include_clinvars = True #true to include clinical variables
-        include_LCMSvars = False #true to include LCMS features
+        include_LCMSvars = True #true to include LCMS features
 
         ## Choose whether to restrict to only LCMS patients ##
         onlyLCMSpatients = True #true to include only patients with LCMS data
@@ -1719,8 +1777,8 @@ def main():
     ## Analysis with chosen subsets of LCMS features ##
     if run_BestSubset == True:
         #Output csv files with predicted probabilities and performance results
-        J = 6 #select up to J top LCMS features
-        subsetAlg = "topRF" #options: "topRF","ttest", "greedyRF"
+        J = 5 #select up to J top LCMS features
+        subsetAlg = "greedyRF" #options: "topRF","ttest", "greedyRF"
         bestSubset_analysis(inputsDir, inClinData, inLCMSData,
                     NoInitialDHF, NoOFI, outcome, predictors_prelim, 
                     include_study_dum, include_imp_dums, imp_dums_only, 
