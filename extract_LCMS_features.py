@@ -452,6 +452,19 @@ def get_patientID(labtech, filename):
     print "\n" , IDcode
     return IDcode
 
+def get_RP_batch1_crosswalk(clinDir):
+    """Read in and clean data that will link reverse phase LCMS serum batch 1 to clinical data
+    """
+    sampleMap = pd.read_csv(clinDir + "RP_batch1_sample_merge_info.csv", sep=',')
+    #get patient ID and sample code to be compatible with other data
+    sampleMap = sampleMap.assign(code = sampleMap['Code'].astype(str))
+    sampleMap.code = "ID" + sampleMap.code.str.rjust(4,'0') #91 patients
+    sampleMap = sampleMap.assign(Cod_Nin = sampleMap['Sample'].str.lower())
+    #replace Cod_Nin with missings for hospital obs since clinical hospital data lacks them
+        #will have merge problems later if not set to missing in both datasets
+    sampleMap.loc[sampleMap.Study=="Hospital","Cod_Nin"] = np.nan
+    return sampleMap
+
 
 def prepare_for_merge_with_clinical(respD, clinDir, outFname, labtech):
     """
@@ -481,17 +494,9 @@ def prepare_for_merge_with_clinical(respD, clinDir, outFname, labtech):
         vals = respD_unip[:,1:].astype(float)
         RPdf = pd.DataFrame.from_records(vals, index=index, columns=colnames)
         RPdf.shape #91 x 2500
-        #add cohort/hospital indicator
         #Kristof's batch 1 data contains some cohort samples 
             #use info I've gathered (added to .csv file) on Study to make merge
-        sampleMap = pd.read_csv(clinDir + "RP_batch1_sample_merge_info.csv", sep=',')
-        #get patient ID and sample code to be compatible with other data
-        sampleMap = sampleMap.assign(code = sampleMap['Code'].astype(str))
-        sampleMap.code = "ID" + sampleMap.code.str.rjust(4,'0') #91 patients
-        sampleMap = sampleMap.assign(Cod_Nin = sampleMap['Sample'].str.lower())
-        #replace Cod_Nin with missings for hospital obs since clinical hospital data lacks them
-            #will have merge problems later if not set to missing in both datasets
-        sampleMap.loc[sampleMap.Study=="Hospital","Cod_Nin"] = np.nan
+        sampleMap = get_RP_batch1_crosswalk(clinDir)
         #merge sampleMap with LCMS on code
         RPdf_wmap = pd.merge(RPdf, sampleMap, left_index = True, right_on="code") #91 rows
         myinter = set(sampleMap.code).intersection(set(unipID))
