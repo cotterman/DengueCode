@@ -89,7 +89,7 @@ def parse_args(patient_sample, outcome, NoOFI, NoInitialDHF):
             FileNamePrefix = "OFIDF.v.DHFDSS"
     return GraphInfo(patient_sample, comparison_groups, FileNamePrefix, NoInitialDHF, NoOFI)
 
-def create_LCMS_topJ_barplot(ginfo, outcome, subsetAlg_list):
+def create_LCMS_topJ_barplot(ginfo, outcome, subsetAlg_list, inLCMSData, FileNameSuffix2):
   
     ## Set graph features
     fig, ax = plt.subplots()
@@ -108,13 +108,13 @@ def create_LCMS_topJ_barplot(ginfo, outcome, subsetAlg_list):
 
     ## Prepare data to be graphed    
     ttestDF = pd.read_csv(outDir + 'R_' + outcome + \
-                            '_BestSubset_ttest_NPserum.txt', sep=",")
+                            '_BestSubset_ttest_' + inLCMSData + FileNameSuffix2 + '.txt', sep=",")
     ttestDF['mlabel'] = ttestDF['Unnamed: 0']
     topRFDF = pd.read_csv(outDir + 'R_' + outcome + \
-                            '_BestSubset_topRF_NPserum.txt', sep=",")
+                            '_BestSubset_topRF_' + inLCMSData + FileNameSuffix2 + '.txt', sep=",")
     topRFDF['mlabel'] = topRFDF['Unnamed: 0']
     greedyRFDF = pd.read_csv(outDir + 'R_' + outcome + \
-                            '_BestSubset_greedyRF_NPserum.txt', sep=",")
+                            '_BestSubset_greedyRF_' + inLCMSData + FileNameSuffix2 + '.txt', sep=",")
     greedyRFDF['mlabel'] = greedyRFDF['Unnamed: 0']
 
     ## To fill in during loop
@@ -188,8 +188,7 @@ def create_LCMS_topJ_barplot(ginfo, outcome, subsetAlg_list):
     leg = plt.legend((lhandles), (method_labels[::-1]), ncol=mycols, columnspacing=1)
     #plt.tight_layout()
 
-    plt.savefig(outDir + 'LCMS_subsets_' + outcome + '_' + \
-        subsetAlg_list[0] + '_' + subsetAlg_list[1] + '.eps', dpi=1200) 
+    plt.savefig(outDir + inLCMSData + '_subsets_' + outcome + FileNameSuffix2 + '.eps', dpi=1200) 
     plt.close()  
 
 def create_LCMS_barplot(ginfo, LCMScompare):
@@ -224,6 +223,20 @@ def create_LCMS_barplot(ginfo, LCMScompare):
         inLCMSData_desc = ['Saliva','Urine'] 
         #xkcd colors
         colors = ["dark lilac","teal green"]
+
+    elif LCMScompare == "MassHunt _NPvRP":
+        # LCMS data to loop through
+        inLCMSData_list = ['MassHuntRP_noFill','MassHuntNP']
+        # labels to appear in graph legend
+        inLCMSData_desc = ['Normal phase, Mass Hunter','Reverse phase, Mass Hunter'] 
+        #xkcd colors
+        colors = ["plum","tangerine"]
+
+    elif LCMScompare == "RP_noFillvFill":
+        #eventually may instead want MassHuntRP_fill vs. MassHuntRP_isotope
+        inLCMSData_list = ['MassHuntRP_noFill','MassHuntRP_fill']
+        inLCMSData_desc = ['RP Mass Hunter - no Fill','RP Mass Hunter - with Fill'] 
+        colors = ["plum","mauve"] #'sea blue'
 
     figName = ginfo.FileNamePrefix + '_' + LCMScompare
     #first name listed will appear closest to bottom of y-axis
@@ -358,7 +371,83 @@ def create_predSets_barplot(ginfo):
     #plt.title('Performance for distinguishing OFI from dengue')
     plt.tight_layout()
     plt.savefig(outDir + figName + '_talk.png', dpi=1200, transparent=True) #transparent=True for ppt
-    plt.close()     
+    plt.close()    
+
+
+def create_dataCorrect_barplot(ginfo, inLCMSData):    
+    #runs to loop through
+    suffix_list = ["", "_C1", "_C2"]
+    #labels to appear in graph legend
+    list_desc = ["Original Data",
+                "Correction of false positive",
+                "Correction of false positive and false negative"]
+    predictor_desc = "covarlist_all" # "covarlist" or "covarlist_all" or "clinOnly"
+    if predictor_desc == "covarlist":
+        title = "LC-MS features only"
+    elif predictor_desc == "covarlist_all":
+        title = "Clinical + LC-MS features"
+    if predictor_desc == "clinOnly" :
+            figName   = ginfo.FileNamePrefix + '_covarlist_all_' + \
+                         inLCMSData + 'patients_dataCorrect' 
+            tableName = ginfo.FileNamePrefix + '_covarlist_all_' + \
+                        inLCMSData + 'patients.txt'
+            title = "Clinical features only"
+    else:
+        figName   = ginfo.FileNamePrefix + '_' + predictor_desc + '_' + inLCMSData + '_dataCorrect' 
+        tableName = ginfo.FileNamePrefix + '_' + predictor_desc + '_' + inLCMSData + '.txt'
+    resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
+    #eliminate LDA+shrinkage since it behaves strangely
+    #resultsDF = resultsDF[resultsDF['Unnamed: 0'] != "LDA+shrinkage"]
+    alg_names = resultsDF['Unnamed: 0'] #algorithm names
+    print "alg_names: " , alg_names
+
+    initial_pos = np.arange(len(alg_names))*(
+        len(suffix_list)+1)+len(suffix_list)+1
+    bar_width = 1
+    colors = ["salmon","khaki","teal"]
+    mycolors = sns.xkcd_palette(colors)
+    plt.figure(figsize=(6.7,8)) #to place next to one another
+    #cycle through each patient list
+    plots = []
+    for counter, suffix in enumerate(suffix_list):
+        if predictor_desc == "clinOnly" :
+            tableName = ginfo.FileNamePrefix + '_covarlist_all_' + \
+                        inLCMSData + 'patients' + suffix + '.txt'
+        else:
+            tableName = ginfo.FileNamePrefix + '_' + predictor_desc + '_' + \
+                        inLCMSData + suffix + '.txt'
+        resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
+        #eliminate LDA+shrinkage since it behaves strangely
+        #resultsDF = resultsDF[resultsDF['Unnamed: 0'] != "LDA+shrinkage"]
+        measurements = np.array(resultsDF['cvAUC'])
+        z = stats.norm.ppf(.95)
+        SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
+               ( np.array(resultsDF['ci_up']) - np.array(resultsDF['cvAUC']) )/z ]
+        alg_pos = initial_pos - counter 
+        print "measurements: " , measurements
+        print "alg_pos: " , alg_pos
+        plot = plt.barh(bottom=alg_pos, width=measurements, height=bar_width,
+                        xerr=SEs, error_kw=dict(ecolor='.1', lw=1, capsize=1, capthick=1),
+                        align='center', alpha=1, 
+                        color=mycolors[counter], label=list_desc[counter])
+        #add numeric values to plot
+        xpos = np.array(resultsDF['ci_low']) -.05
+        ypos = alg_pos - .3
+        mytext = ["%.2f" % x for x in measurements]    
+        for place, text in enumerate(mytext):
+            plt.text(xpos[place], ypos[place], text, color="white", fontsize=10)
+        plots.append(plot)
+    plt.xlabel = "cvAUC"
+    plt.title(title)
+    plt.xlim(.5, 1)
+    plt.ylim(0,max(initial_pos)+2)
+    print "counter: " , counter
+    plt.yticks(initial_pos - counter/2, alg_names)
+    plt.legend(prop={'size':8})
+    plt.tight_layout()
+    plt.savefig(outDir + figName + '.eps', dpi=1200)
+    plt.close()
+
 
 def create_impDum_barplot(ginfo):    
     #runs to loop through
@@ -486,15 +575,22 @@ def main():
     #patient_sample = "cohort_only"
     #patient_sample = "hospital_only"
 
+    inLCMSData = "MassHuntNP" #"MassHuntNP", "MassHuntRP_noFill"
+
     ## Obtain graph title, filename prefix, etc.
     ginfo = parse_args(patient_sample, outcome, NoOFI, NoInitialDHF)
 
+    ## Examine affect of altering Dx label for LCMS prediction
+    create_dataCorrect_barplot(ginfo, inLCMSData)
+
     ## Bart plot which compares methods to choose best subset of LCMS features
-    subsetAlg_list = ['greedyRF','topRF', 'ttest'] #choose 2 of: "ttest","topRF","greedyRF"
-    create_LCMS_topJ_barplot(ginfo, outcome, subsetAlg_list)
+    #subsetAlg_list = ['greedyRF','topRF', 'ttest'] #choises: "ttest","topRF","greedyRF"
+    #FileNameSuffix2 = "" # '_C1', '_C2' will be based on C1, C2 data corrections. 
+        #FileNameSuffix2 = '' means no correction 
+    #create_LCMS_topJ_barplot(ginfo, outcome, subsetAlg_list, inLCMSData, FileNameSuffix2)
 
     ## Bar plot with bars grouped by predictor set and colors indicating LCMS run 
-    #LCMScompare = "NonInvasives" #"NonInvasives", "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
+    #LCMScompare = "MassHuntRP_v_MassHuntNP" #"NonInvasives", "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
     #create_LCMS_barplot(ginfo, LCMScompare)   
 
     ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors sets 

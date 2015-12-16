@@ -584,11 +584,11 @@ def build_library(p, nobs, screen=None, testing=False, univariate=False):
         libs=[CARTune, mean, LDA_noshrink, myQDA, NNtune]
         libnames=["CART","Mean","LDA","QDA","N.Neighbor"] 
     else:
-        libs=[mean, CARTune, centroids, LDA_shrink, GBtune, adaBoost, RFtune, 
-            NNtune, L1tune, L2tune, svmL2tune] #svmRBFtune, ENtune -- wacky results
-        libnames=["Mean", "CART", "Centroids", "LDA+shrinkage", "Gradient Boost", 
+        libs=[mean, CARTune, centroids, GBtune, adaBoost, RFtune, 
+            NNtune, L1tune, L2tune, svmL2tune] #LDA_shrink, svmRBFtune, ENtune -- wacky results
+        libnames=["Mean", "CART", "Centroids", "Gradient Boost", 
             "AdaBoost", "Random Forests", 
-            "N.Neighbor", "Logit-L1", "Logit-L2", "SVM-L2"] #"SVM-RBF", "Elastic Net"
+            "N.Neighbor", "Logit-L1", "Logit-L2", "SVM-L2"] #"LDA+shrinkage", "SVM-RBF", "Elastic Net"
     if libnames == []:
         libnames=[est.__class__.__name__ for est in libs]
 
@@ -1488,7 +1488,8 @@ def reality_check(pvals_allK, outDir):
 def FDR_analysis(FDR, K, scaleMe, nfeatures_orig, inputsDir, inClinData, inLCMSData,
             NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
             outcome, predictors_prelim, 
-            include_study_dum, include_imp_dums, imp_dums_only, std_vars, correctData, outDir, FileNameSuffix2):   
+            include_study_dum, include_imp_dums, imp_dums_only, std_vars, 
+            correctData, outDir, FileNameSuffix2):   
     """Run several FDR related analyses and produce corresponding graphs
 
     """
@@ -1574,8 +1575,7 @@ def parse_arguments():
 
     parser.add_argument('--inClinData', dest='inClinData', 
                         default = "clin12_full_wImputedRF1.txt")
-    parser.add_argument('--correctData', dest='correctData', 
-                        default = 0)
+    parser.add_argument('--correctData', dest='correctData', default = '')
     parser.add_argument('--inLCMSData', dest='inLCMSData', default='')
 
     parser.add_argument('--testlib', action='store_true', default=False)
@@ -1590,7 +1590,7 @@ def parse_arguments():
             args.include_clinvars, args.include_clinvars, args.include_LCMSvars, 
             args.onlyLCMSpatients, args.predictor_desc,
             args.include_study_dum, args.include_imp_dums, args.imp_dums_only,
-            args.inClinData, args.correctData, args.inLCMSData, args.testlib)
+            args.inClinData, args.inLCMSData, args.correctData, args.testlib)
 
 def main():
     start_time_overall = time.time()
@@ -1599,7 +1599,7 @@ def main():
     ###################### Choices, choices, choices ##########################
     
     #set to true if running "run_prediction_in_python.py loops thru parameter lists
-    params_from_commandline = True 
+    params_from_commandline = False 
 
     if params_from_commandline==True:
         ## Parse parameters provided at command-line level
@@ -1609,17 +1609,17 @@ def main():
          include_clinvars, include_clinvars, include_LCMSvars, onlyLCMSpatients,
          predictor_desc,
          include_study_dum, include_imp_dums, imp_dums_only, 
-         inClinData, correctData, inLCMSData, testlib
+         inClinData, inLCMSData, correctData, testlib
          ) = parse_arguments()
 
     else:
         ## Choose which parts of code to run ##
-        run_MainAnalysis = False  # if false, will expect to get results from file
-        run_SL = False # if false, can still run algorithms in library, but not SL
-        plot_MainAnalysis = False  # if true, will create figures for main analysis
+        run_MainAnalysis = True  # if false, will expect to get results from file
+        run_SL = True # if false, can still run algorithms in library, but not SL
+        plot_MainAnalysis = True  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
         run_BestSubset = False # true means to find best subset of LCMS features and run SL with them
-        run_FDR = True #true means to do false discovery rate analysis
+        run_FDR = False #true means to do false discovery rate analysis
         #determine which variable importance code to run
         run_VIM = False  # if false, none of the VIM code will be run
         forget_VIM1 = False # if true, will do VIM analysis and graphs without VIM1 output
@@ -1628,8 +1628,8 @@ def main():
         only_VIM2 = False # true if just want to plot VIM2 (and not other VIMs)
 
         ## Choose outcome variable ##
-        #outcome = "is.DEN"  
-        outcome = "is.DHF_DSS"
+        outcome = "is.DEN"  
+        #outcome = "is.DHF_DSS"
 
         ## Choose whether to exclude OFI patients ##
         NoOFI = False #only applies to is.DHF_DSS analyses
@@ -1646,7 +1646,7 @@ def main():
         testSample = "hospital" #options: "cohort" or "hospital"
 
         ## Choose whether to include clinical variables and/or LCMS features ##
-        include_clinvars = True #true to include clinical variables
+        include_clinvars = False #true to include clinical variables
         include_LCMSvars = True #true to include LCMS features
 
         ## Choose whether to restrict to only LCMS patients ##
@@ -1670,13 +1670,14 @@ def main():
         inClinData = "clin12_full_wImputedRF1.txt" #data prepared in R
 
         ## Choose whether to correct what we believe was incorrect Dx in data ##
-        correctData = '1' #'0' for none, '1' to correct ID1000, '2' to correct ID1000 and ID0273 
+        correctData = '0' #'0' for none, '1' to correct ID1000, '2' to correct ID1000 and ID0273 
 
         ## Choose input LCMS data ##
         #inLCMSData = "NPbins50x50" #prepared in extract_LCMS_features.py
         #inLCMSData = "RPbins50x50" #prepared in extract_LCMS_features.py
         #inLCMSData = "MassHuntNP" #prepared in prepare_MassHunter_data.py
-        inLCMSData = "MassHuntRP_noFill" #prepared in prepare_MassHunter_data.py
+        #inLCMSData = "MassHuntRP_noFill" #prepared in prepare_MassHunter_data.py
+        inLCMSData = "MassHuntRP_fill" #prepared in prepare_MassHunter_data.py
         #inLCMSData = "SalivaMH" #prepared in prepare_MassHunter_data.py 
         #inLCMSData = "UrineMH" #prepared in prepare_MassHunter_data.py 
 
@@ -1729,7 +1730,7 @@ def main():
     else: # all covariates, but no missing indicators
         FileNameSuffix1 = "" #could use "_noDums" but instead I will use no suffix
     ## Suffix to indicate modification of diagnoses reported in data
-    if correctData == '0':
+    if correctData == '0' or correctData == '':
         FileNameSuffix2 = ""
     elif correctData == '1':
         FileNameSuffix2 = "_C1"
@@ -1759,7 +1760,7 @@ def main():
                         NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
                         outcome, predictors_prelim, 
                         include_study_dum, include_imp_dums, imp_dums_only, 
-                        include_clinvars, include_LCMSvars, correctData, standardize=std_vars)
+                        include_clinvars, include_LCMSvars, correctData, std_vars)
         #print "Predictors to include, pre-screening:\n" , predictors
 
         ## Build library of classifiers ##

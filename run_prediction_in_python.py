@@ -18,7 +18,7 @@ testlib = '' #leave as '' to run with full SL library
 
 #Loop thru parameters options
 ps = []
-for outcome in ['is.DEN']:
+for outcome in ['is.DHF_DSS']: #'is.DEN', 'is.DHF_DSS'
     if outcome=='is.DHF_DSS':
         NoOFI_list = [''] #options for is.DHF_DSS: '--NoOFI',''
     else:
@@ -26,7 +26,7 @@ for outcome in ['is.DEN']:
     for NoOFI in NoOFI_list:              
         
   #"NPbins50x50","MassHuntNP","RPbins50x50","MassHuntRP_fill","MassHuntRP_noFill","MassHuntRP_isotope"
-        for inLCMSData in ["MassHuntNP","MassHuntRP_noFill"]:
+        for inLCMSData in ["MassHuntNP"]:
         #for inLCMSData in ["SalivaMH", "UrineMH"]:
 
             predictor_desc  = "covarlist_all"
@@ -46,7 +46,7 @@ for outcome in ['is.DEN']:
                 for include_LCMSvars in ['','--include_LCMSvars']:
                 #for imp_dums_only in imp_dums_only_list:
 
-                    for correctData in ['0','1','2']:
+                    for correctData in ['0','1','2']: #'0','1','2'
 
                         #string args together
                         args = " ".join([run_MainAnalysis, run_SL, plot_MainAnalysis, 
@@ -54,7 +54,7 @@ for outcome in ['is.DEN']:
                                 include_clinvars, include_LCMSvars, onlyLCMSpatients,
                                 NoOFI, NoInitialDHF, include_imp_dums, imp_dums_only,
                                 '--outcome', outcome, '--inLCMSData', inLCMSData, 
-                                '--correctData', correctData, '--testlib', testlib,
+                                '--correctData', correctData, testlib,
                                 '--predictor_desc', predictor_desc])
 
                         #begin each python instance
