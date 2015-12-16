@@ -360,7 +360,8 @@ def add_imput_dummies(include_imp_dums, imp_dums_only, df, predictors_prelim):
 
 def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample, 
             NoOFI, onlyLCMSpatients, noLCMSpatients, outcome, predictors_prelim, include_study_dum, 
-            include_imp_dums, imp_dums_only, include_clinvars, include_LCMSvars, standardize=True):
+            include_imp_dums, imp_dums_only, include_clinvars, include_LCMSvars, correctData,
+            standardize=True):
     """
         Create pandas dataframe from text files created in R and extract_LCMS_features.py
         Standardize predictor variables (if standardize=True)
@@ -380,6 +381,19 @@ def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample,
     df_prelim = pd.read_csv(inputsDir + filename, sep='\t', 
         true_values=["True","Yes","TRUE"], false_values=["False","No","FALSE"], 
         na_values=['NaN','NA']) 
+
+    #one observation got incorrect diagnostic label - correct it here
+    #ID1000 was classified as DENV but should be ND
+    if correctData=='1':
+        df_prelim['is.DEN'][(df_prelim['code']=='ID1000')] = False
+
+    #ID0273 might have been misclassified: says ND but maybe should be DHF/DSS
+    if correctData=='2':
+        df_prelim['is.DEN'][(df_prelim['code']=='ID0273')] = True
+        df_prelim['is.DHF_DSS'][(df_prelim['code']=='ID0273')] = True
+
+    print "Getting data: is.DEN vs. is.DHF_DSS: " 
+    print pd.crosstab(df_prelim['is.DEN'], df_prelim['is.DHF_DSS'], dropna=False)
 
     if include_clinvars==True:
 
@@ -454,7 +468,7 @@ def get_data(inputsDir, filename, inLCMSData, NoInitialDHF, patient_sample,
 
     #useful for trouble-shooting
     #print df[["code","Study","Cod_Nin",outcome]]
-    df[["code","Study","Cod_Nin",outcome]].to_csv(outDir+ 'patients_and_dx.txt', sep=",") 
+    #df[["code","Study","Cod_Nin",outcome]].to_csv(outDir+ 'patients_and_dx.txt', sep=",") 
 
     return df, all_predictors
 
@@ -1105,7 +1119,7 @@ def TopJ_and_clin(X, predictors, topJ_indices, j):
 
 def predict_for_LCMSpatients_allClin(inputsDir, inClinData, inLCMSData,
             NoInitialDHF, NoOFI, outcome, predictors_prelim, 
-            include_study_dum, include_imp_dums, imp_dums_only, std_vars, testlib):
+            include_study_dum, include_imp_dums, imp_dums_only, std_vars, correctData, testlib):
     """Predictions for LCMS patients using clin data fit to all non-LCMS hospit patients
             no need to keep track of predictor indices and whatnot
     """
@@ -1120,7 +1134,7 @@ def predict_for_LCMSpatients_allClin(inputsDir, inClinData, inLCMSData,
     df_noLCMS, predictors_clin = get_data(inputsDir, inClinData, inLCMSData,
             NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
             outcome, predictors_prelim, include_study_dum, include_imp_dums, imp_dums_only, 
-            include_clinvars, include_LCMSvars, std_vars)
+            include_clinvars, include_LCMSvars, correctData, correctData, std_vars)
     libs, libnames = build_library( p=len(predictors_clin), nobs=df_noLCMS.shape[0],
                      screen=None, testing=testlib)
     sl_noLCMS = SuperLearner(libs, loss="nloglik", K=2, stratifyCV=True, save_pred_cv=True)
@@ -1139,7 +1153,7 @@ def predict_for_LCMSpatients_allClin(inputsDir, inClinData, inLCMSData,
     df_onlyLCMS, predictors_clin = get_data(inputsDir, inClinData, inLCMSData,
             NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
             outcome, predictors_prelim, include_study_dum, include_imp_dums, imp_dums_only, 
-            include_clinvars, include_LCMSvars, standardize=std_vars)
+            include_clinvars, include_LCMSvars, correctData, standardize=std_vars)
     X_onlyLCMS = df_onlyLCMS[predictors_clin].astype(float).values
     print "type and X_onlyLCMS.shape: " , type(X_onlyLCMS), X_onlyLCMS.shape
     y_onlyLCMS = df_onlyLCMS[outcome].astype(int).values 
@@ -1150,7 +1164,7 @@ def predict_for_LCMSpatients_allClin(inputsDir, inClinData, inLCMSData,
 
 def bestSubset_predictions(inputsDir, inClinData, inLCMSData,
             NoInitialDHF, NoOFI, outcome, predictors_prelim, 
-            include_study_dum, include_imp_dums, imp_dums_only, std_vars, testlib,
+            include_study_dum, include_imp_dums, imp_dums_only, std_vars, correctData, testlib,
             predsSub, resultsSub, SL_preds_clin, subsetMethod, J, subsetAlg):
     """predictions for LCMS patients using topJ LCMS features plus 
         (a) clinical vars -- subsetMethod = 1
@@ -1169,7 +1183,7 @@ def bestSubset_predictions(inputsDir, inClinData, inLCMSData,
     df_allLCMS, predictors_all = get_data(inputsDir, inClinData, inLCMSData,
             NoInitialDHF, "both", NoOFI, onlyLCMSpatients, noLCMSpatients,
             outcome, predictors_prelim, include_study_dum, include_imp_dums, imp_dums_only, 
-            include_clinvars, include_LCMSvars, std_vars)
+            include_clinvars, include_LCMSvars, correctData, std_vars)
     #add SL_preds_clin as a covariate if desired
     if subsetMethod==2 or subsetMethod==3:
         df_allLCMS["SL_preds_clin"] = SL_preds_clin
@@ -1212,7 +1226,7 @@ def bestSubset_predictions(inputsDir, inClinData, inLCMSData,
 def bestSubset_analysis(inputsDir, inClinData, inLCMSData,
                 NoInitialDHF, NoOFI, outcome, predictors_prelim, 
                 include_study_dum, include_imp_dums, imp_dums_only, 
-                std_vars, testlib, J, subsetAlg):
+                std_vars, correctData, testlib, J, subsetAlg, FileNameSuffix2):
     """Output predicted probabilities and performance results csv
         for various algorithms with up to J LCMS features chosen
     """
@@ -1225,21 +1239,23 @@ def bestSubset_analysis(inputsDir, inClinData, inLCMSData,
     y_onlyLCMS, SL_preds_clin = predict_for_LCMSpatients_allClin(
                 inputsDir, inClinData, inLCMSData,
                 NoInitialDHF, NoOFI, outcome, predictors_prelim, 
-                include_study_dum, include_imp_dums, imp_dums_only, std_vars, testlib)
+                include_study_dum, include_imp_dums, imp_dums_only, std_vars, correctData, testlib)
 
     #predictions for LCMS patients using topJ LCMS features
     for method in [1, 2, 3]: # [1,2,3] to do for all 3 subset methods
         predsSub, resultsSub = bestSubset_predictions(inputsDir, inClinData, inLCMSData,
                 NoInitialDHF, NoOFI, outcome, predictors_prelim, 
-                include_study_dum, include_imp_dums, imp_dums_only, std_vars, testlib,
+                include_study_dum, include_imp_dums, imp_dums_only, std_vars, correctData, testlib,
                 predsSub, resultsSub, SL_preds_clin, method, J, subsetAlg)
     print "predsSub: " , predsSub
     print "resultsSub: " , resultsSub
     
     # print predicted probabilities to file (optional)
-    predsSub.to_csv(outDir+ 'P_' + outcome + '_BestSubset_' + subsetAlg + '_NPserum.txt', sep=",") 
+    predsSub.to_csv(outDir+ 'P_' + outcome + '_BestSubset_' + subsetAlg \
+            + '_' + inLCMSData + FileNameSuffix2 + '.txt', sep=",") 
     ## Add columns with additional methods info, print results to text file ##
-    resultsSub.to_csv(outDir+ 'R_' + outcome + '_BestSubset_' + subsetAlg + '_NPserum.txt', sep=",")
+    resultsSub.to_csv(outDir+ 'R_' + outcome + '_BestSubset_' + subsetAlg \
+            + '_' + inLCMSData + FileNameSuffix2 + '.txt', sep=",")
 
     return 
 
@@ -1348,7 +1364,8 @@ def scale_stats(stats_ordered_permute, tstats_ordered, X, nfeatures_orig):
 
 
 def make_hist_of_tstats(tstats_ordered, stats_ordered_permute, 
-                        outDir, outcome, inLCMSData, nfeatures_orig, scaleMe=False):
+                        outDir, outcome, inLCMSData, nfeatures_orig, 
+                        FileNameSuffix2, scaleMe=False):
     """Histogram of t-stats using input:
         tstats_ordered are tstats based on data
         stats_ordered_permute are tstats based on permutation of data
@@ -1385,11 +1402,12 @@ def make_hist_of_tstats(tstats_ordered, stats_ordered_permute,
     plt.xlabel("t-statistics")
     #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
     plt.subplots_adjust(left=.12, right=.9, top=.9, bottom=.15)
-    plt.savefig(outDir + outcome + '_LCMS_tstat_hist_' + inLCMSData + suffix + '.eps', dpi=1200) 
+    plt.savefig(outDir + outcome + '_tstat_hist_' + inLCMSData + suffix + \
+                FileNameSuffix2 + '.eps', dpi=1200) 
     plt.close() 
 
 def make_SAM_plot(stats_ordered_permute, tstats_ordered, best_delta, 
-                outDir, outcome, inLCMSData, scaleMe=False):
+                outDir, outcome, inLCMSData, FileNameSuffix2, scaleMe=False):
     """plot of expected ordered t-stats vs. actual ordered t-stats (SAM)
     """
     SAM_scatter = plt.figure(figsize=(6.7,6.7))
@@ -1414,10 +1432,12 @@ def make_SAM_plot(stats_ordered_permute, tstats_ordered, best_delta,
         suffix = ""
     #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
     plt.subplots_adjust(left=.15, right=.9, top=.9, bottom=.15)
-    plt.savefig(outDir + outcome + '_tstat_SAM_plot_' + inLCMSData + suffix + '.eps', dpi=1200) 
+    plt.savefig(outDir + outcome + '_tstat_SAM_plot_' + inLCMSData + suffix + \
+                FileNameSuffix2 + '.eps', dpi=1200) 
     plt.close()
 
-def plot_BH(pvals, outDir, FDR, outcome, inLCMSData, nfeatures_orig, scaleMe=False):
+def plot_BH(pvals, outDir, FDR, outcome, inLCMSData, nfeatures_orig, 
+            FileNameSuffix2, scaleMe=False):
     """Plot ordered pvals with Benjamini-Hochberg line
 
     """
@@ -1450,7 +1470,8 @@ def plot_BH(pvals, outDir, FDR, outcome, inLCMSData, nfeatures_orig, scaleMe=Fal
         suffix = ""
     #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
     plt.subplots_adjust(left=.15, right=.9, top=.9, bottom=.15)
-    plt.savefig(outDir + outcome + '_pval_BH_plot_' + inLCMSData + suffix + '.eps', dpi=1200) 
+    plt.savefig(outDir + outcome + '_pval_BH_plot_' + inLCMSData + \
+                FileNameSuffix2 + suffix + '.eps', dpi=1200) 
     plt.close() 
 
 def reality_check(pvals_allK, outDir):
@@ -1467,7 +1488,7 @@ def reality_check(pvals_allK, outDir):
 def FDR_analysis(FDR, K, scaleMe, nfeatures_orig, inputsDir, inClinData, inLCMSData,
             NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
             outcome, predictors_prelim, 
-            include_study_dum, include_imp_dums, imp_dums_only, std_vars, outDir):   
+            include_study_dum, include_imp_dums, imp_dums_only, std_vars, correctData, outDir, FileNameSuffix2):   
     """Run several FDR related analyses and produce corresponding graphs
 
     """
@@ -1478,7 +1499,7 @@ def FDR_analysis(FDR, K, scaleMe, nfeatures_orig, inputsDir, inClinData, inLCMSD
                 NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
                 outcome, predictors_prelim, 
                 include_study_dum, include_imp_dums, imp_dums_only, 
-                include_clinvars, include_LCMSvars, standardize=std_vars)
+                include_clinvars, include_LCMSvars, correctData, std_vars)
     X_orig = df[predictors].astype(float).values
     X = preprocessing.scale(X_orig) #standardized values
     print "type and X.shape: " , type(X), X.shape
@@ -1489,14 +1510,14 @@ def FDR_analysis(FDR, K, scaleMe, nfeatures_orig, inputsDir, inClinData, inLCMSD
     tstats_ordered, pvals = run_ttests(X, y, permute=False)
 
     #plot of ordered pvals with BH threshold line
-    plot_BH(pvals, outDir, FDR, outcome, inLCMSData, nfeatures_orig, scaleMe)
+    plot_BH(pvals, outDir, FDR, outcome, inLCMSData, nfeatures_orig, FileNameSuffix2, scaleMe)
 
     #get K permuted t-stats and p-vals for each LCMS feature
     pvals_allK, tstats_allK, stats_ordered_permute = get_permute_stats(X, y, K)
 
     #histogram of t-stats
     make_hist_of_tstats(tstats_ordered, stats_ordered_permute, 
-            outDir, outcome, inLCMSData, nfeatures_orig, scaleMe)
+            outDir, outcome, inLCMSData, nfeatures_orig, FileNameSuffix2, scaleMe)
 
     #find the delta that gives desired FDR for SAM method and make SAM plot
     if inLCMSData=="MassHuntNP" and scaleMe==True:
@@ -1507,7 +1528,7 @@ def FDR_analysis(FDR, K, scaleMe, nfeatures_orig, inputsDir, inClinData, inLCMSD
                                 tstats_allK, FDR, K, scaleMe)    
     #plot of expected ordered t-stats vs. actual ordered t-stats (SAM)
     make_SAM_plot(stats_ordered_permute, tstats_ordered, best_delta, 
-            outDir, outcome, inLCMSData, scaleMe)
+            outDir, outcome, inLCMSData, FileNameSuffix2, scaleMe)
 
     #curiousity -- do we get uniform dist of pvals for permutation? yes :)
     #reality_check(pvals_allK, outDir)
@@ -1525,6 +1546,7 @@ def parse_arguments():
     parser.add_argument('--plot_MainAnalysis', action='store_true', default=False)
     parser.add_argument('--run_testdata', action='store_true', default=False)
     parser.add_argument('--run_BestSubset', action='store_true', default=False)
+    parser.add_argument('--run_FDR', action='store_true', default=False)
     parser.add_argument('--run_VIM', action='store_true', default=False)
     parser.add_argument('--run_VIM1', action='store_true', default=False)
     parser.add_argument('--forget_VIM1', action='store_true', default=False)
@@ -1552,6 +1574,8 @@ def parse_arguments():
 
     parser.add_argument('--inClinData', dest='inClinData', 
                         default = "clin12_full_wImputedRF1.txt")
+    parser.add_argument('--correctData', dest='correctData', 
+                        default = 0)
     parser.add_argument('--inLCMSData', dest='inLCMSData', default='')
 
     parser.add_argument('--testlib', action='store_true', default=False)
@@ -1559,14 +1583,14 @@ def parse_arguments():
     args = parser.parse_args()
 
     return (args.run_MainAnalysis, args.run_SL, args.plot_MainAnalysis, args.run_testdata, 
-            args.run_BestSubset, args.run_VIM, args.run_VIM1, args.run_VIM2,
+            args.run_BestSubset, args.run_FDR, args.run_VIM, args.run_VIM1, args.run_VIM2,
             args.outcome,
             args.NoOFI, args.NoInitialDHF, 
             args.patient_sample, args.testSample, 
             args.include_clinvars, args.include_clinvars, args.include_LCMSvars, 
             args.onlyLCMSpatients, args.predictor_desc,
             args.include_study_dum, args.include_imp_dums, args.imp_dums_only,
-            args.inClinData, args.inLCMSData, args.testlib)
+            args.inClinData, args.correctData, args.inLCMSData, args.testlib)
 
 def main():
     start_time_overall = time.time()
@@ -1575,17 +1599,17 @@ def main():
     ###################### Choices, choices, choices ##########################
     
     #set to true if running "run_prediction_in_python.py loops thru parameter lists
-    params_from_commandline = False 
+    params_from_commandline = True 
 
     if params_from_commandline==True:
         ## Parse parameters provided at command-line level
         (run_MainAnalysis, run_SL, plot_MainAnalysis, run_testdata, 
-         run_BestSubset, run_VIM, run_VIM1, run_VIM2,
+         run_BestSubset, run_FDR, run_VIM, run_VIM1, run_VIM2,
          outcome, NoOFI, NoInitialDHF, patient_sample, testSample, 
          include_clinvars, include_clinvars, include_LCMSvars, onlyLCMSpatients,
          predictor_desc,
          include_study_dum, include_imp_dums, imp_dums_only, 
-         inClinData, inLCMSData, testlib
+         inClinData, correctData, inLCMSData, testlib
          ) = parse_arguments()
 
     else:
@@ -1594,8 +1618,8 @@ def main():
         run_SL = False # if false, can still run algorithms in library, but not SL
         plot_MainAnalysis = False  # if true, will create figures for main analysis
         run_testdata = False  # true means to get predictions for independent test set
-        run_BestSubset = True # true means to find best subset of LCMS features and run SL with them
-        run_FDR = False #true means to do false discovery rate analysis
+        run_BestSubset = False # true means to find best subset of LCMS features and run SL with them
+        run_FDR = True #true means to do false discovery rate analysis
         #determine which variable importance code to run
         run_VIM = False  # if false, none of the VIM code will be run
         forget_VIM1 = False # if true, will do VIM analysis and graphs without VIM1 output
@@ -1645,10 +1669,14 @@ def main():
         ## Choose input clinical data ##
         inClinData = "clin12_full_wImputedRF1.txt" #data prepared in R
 
+        ## Choose whether to correct what we believe was incorrect Dx in data ##
+        correctData = '1' #'0' for none, '1' to correct ID1000, '2' to correct ID1000 and ID0273 
+
         ## Choose input LCMS data ##
         #inLCMSData = "NPbins50x50" #prepared in extract_LCMS_features.py
         #inLCMSData = "RPbins50x50" #prepared in extract_LCMS_features.py
-        inLCMSData = "MassHuntNP" #prepared in prepare_MassHunter_data.py
+        #inLCMSData = "MassHuntNP" #prepared in prepare_MassHunter_data.py
+        inLCMSData = "MassHuntRP_noFill" #prepared in prepare_MassHunter_data.py
         #inLCMSData = "SalivaMH" #prepared in prepare_MassHunter_data.py 
         #inLCMSData = "UrineMH" #prepared in prepare_MassHunter_data.py 
 
@@ -1693,13 +1721,21 @@ def main():
         print "patient sample set to all"
     ## Suffix to indicate use of imputation dummies
     if imp_dums_only==True:
-        FileNameSuffix = "_dumsOnly"
+        FileNameSuffix1 = "_dumsOnly"
     elif include_imp_dums==True:
-        FileNameSuffix = "_impDums"
+        FileNameSuffix1 = "_impDums"
     elif include_study_dum==True: # include is.cohort indicator
-        FileNameSuffix = "_studyDum"
+        FileNameSuffix1 = "_studyDum"
     else: # all covariates, but no missing indicators
-        FileNameSuffix = "" #could use "_noDums" but instead I will use no suffix
+        FileNameSuffix1 = "" #could use "_noDums" but instead I will use no suffix
+    ## Suffix to indicate modification of diagnoses reported in data
+    if correctData == '0':
+        FileNameSuffix2 = ""
+    elif correctData == '1':
+        FileNameSuffix2 = "_C1"
+    elif correctData == '2':
+        FileNameSuffix2 = "_C2"
+
     #will be reset as needed in code below (used for LCMS best subset analysis)
     noLCMSpatients = False
 
@@ -1714,7 +1750,7 @@ def main():
 
     ## Preliminary list of predictors ##
     predictors_prelim = get_predictor_desc(predictor_desc+".txt", outcome, NoOFI)
-    if True == False:
+    if True == True:
         #predictors_prelim = ['Melena']  #test
         #print "Original predictor list:\n" , predictors_prelim
 
@@ -1723,7 +1759,7 @@ def main():
                         NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
                         outcome, predictors_prelim, 
                         include_study_dum, include_imp_dums, imp_dums_only, 
-                        include_clinvars, include_LCMSvars, standardize=std_vars)
+                        include_clinvars, include_LCMSvars, correctData, standardize=std_vars)
         #print "Predictors to include, pre-screening:\n" , predictors
 
         ## Build library of classifiers ##
@@ -1748,16 +1784,20 @@ def main():
     if onlyLCMSpatients == True: 
         #indicate restriction to only LCMS patients
             #could potentially only use clinical vars with these patients (keep predictor_desc)
-        outName = FileNamePrefix + '_' + predictor_desc + '_'+inLCMSData+'patients' + FileNameSuffix
+        outName = FileNamePrefix + '_' + predictor_desc + '_' + inLCMSData + 'patients' \
+                     + FileNameSuffix1 + FileNameSuffix2
     if include_LCMSvars == True:
         #note: use of LCMS features implies restriction to LCMS patients
         if include_clinvars == False:
-            outName = FileNamePrefix + '_covarlist_' + inLCMSData + FileNameSuffix
+            outName = FileNamePrefix + '_covarlist_' + inLCMSData + \
+                    FileNameSuffix1 + FileNameSuffix2
         else:
-            outName = FileNamePrefix + '_' + predictor_desc + '_' + inLCMSData + FileNameSuffix
+            outName = FileNamePrefix + '_' + predictor_desc + '_' + inLCMSData \
+                    + FileNameSuffix1 + FileNameSuffix2
     if onlyLCMSpatients == False and include_LCMSvars == False:
         #case in which LCMS data is not used at all
-        outName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + FileNameSuffix
+        outName = FileNamePrefix + '_' + predictor_desc + '_' + patient_sample + \
+                    FileNameSuffix1 + FileNameSuffix2
     print "outName: " , outName 
 
     ## Analysis of LCMS feature significance (FDR analysis) ##
@@ -1765,24 +1805,24 @@ def main():
         #set parameter values
         FDR = .20
         K = 1000 #number of permutations to run (about 30 min for K=10,000) 
-        scaleMe = True #true for calcs to do worst case scenario based on original #features
+        scaleMe = False #true for calcs to do worst case scenario based on original #features
         nfeatures_orig = 15930 #15930 was reported as # features before filtering (MassHuntNP)
         #run analyses and create FDR related graphs
         FDR_analysis(FDR, K, scaleMe, nfeatures_orig, inputsDir, inClinData, inLCMSData,
                     NoInitialDHF, patient_sample, NoOFI, onlyLCMSpatients, noLCMSpatients,
                     outcome, predictors_prelim,
-                    include_study_dum, include_imp_dums, imp_dums_only, std_vars, 
-                    outDir)            
+                    include_study_dum, include_imp_dums, imp_dums_only, std_vars, correctData, 
+                    outDir, FileNameSuffix2)            
 
     ## Analysis with chosen subsets of LCMS features ##
     if run_BestSubset == True:
         #Output csv files with predicted probabilities and performance results
-        J = 5 #select up to J top LCMS features
-        subsetAlg = "greedyRF" #options: "topRF","ttest", "greedyRF"
+        J = 6 #select up to J top LCMS features
+        subsetAlg = "topRF" #options: "topRF","ttest", "greedyRF"
         bestSubset_analysis(inputsDir, inClinData, inLCMSData,
                     NoInitialDHF, NoOFI, outcome, predictors_prelim, 
                     include_study_dum, include_imp_dums, imp_dums_only, 
-                    std_vars, testlib, J, subsetAlg)
+                    std_vars, correctData, testlib, J, subsetAlg, FileNameSuffix2)
 
     ## Get CV predictions and performance measures ##
     if run_MainAnalysis == True:
@@ -1835,7 +1875,7 @@ def main():
         dfnew, predictors = get_data(inputsDir, inClinData, inLCMSData, NoInitialDHF, 
                 testSample+"_only", NoOFI, onlyLCMSpatients, noLCMSpatients, outcome, predictors, 
                 include_study_dum, include_imp_dums, imp_dums_only, 
-                include_clinvars, include_LCMSvars, standardize=std_vars)
+                include_clinvars, include_LCMSvars, correctData, standardize=std_vars)
         Xnew = dfnew[predictors].astype(float).values
         ynew = dfnew[outcome].astype(int).values #make outcome 0/1 and convert to np array
         predDFnew, resultsDFnew = results_for_testset(X, y, Xnew, ynew, 
@@ -1866,7 +1906,7 @@ def main():
         else:
             ## Read in VIMs from random forests run in R ##
                 #currently just done for hospit_only, covarlist_all
-            VIMout_from_R = "VIM_rf_" + FileNamePrefix + FileNameSuffix
+            VIMout_from_R = "VIM_rf_" + FileNamePrefix + FileNameSuffix1+FileNameSuffix2
             VIM_rf = pd.read_csv(inputsDir + VIMout_from_R + '.txt', sep='\t')
             print VIMout_from_R
             print "VIM_rf: " , VIM_rf 

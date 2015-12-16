@@ -89,7 +89,7 @@ def parse_args(patient_sample, outcome, NoOFI, NoInitialDHF):
             FileNamePrefix = "OFIDF.v.DHFDSS"
     return GraphInfo(patient_sample, comparison_groups, FileNamePrefix, NoInitialDHF, NoOFI)
 
-def create_LCMS_topJ_barplot(ginfo):
+def create_LCMS_topJ_barplot(ginfo, outcome, subsetAlg_list):
   
     ## Set graph features
     fig, ax = plt.subplots()
@@ -98,19 +98,24 @@ def create_LCMS_topJ_barplot(ginfo):
     colors_noLCMS = sns.light_palette("charcoal", input="xkcd", reverse=True, n_colors=4) 
     colors_ttest = sns.light_palette("forest green", input="xkcd", reverse=True, n_colors=4) 
     colors_topRF = sns.light_palette("dark blue", input="xkcd", reverse=True, n_colors=4) 
+    colors_greedyRF = sns.light_palette("maroon", input="xkcd", reverse=True, n_colors=4)#burgundy
     plt.figure(figsize=(6.7,8)) 
 
     ## Decide which data to include
-    temp = range(7) + [744]
+    temp = range(6) + [744]
     LCMSvars_list = temp[::-1] #want 0 to be high on graph - plot it last
-    subsetAlg_list = ['ttest','topRF']
     method_list = ['M3','M2','M1'] #M1 will be high on graph (good)
 
     ## Prepare data to be graphed    
-    ttestDF = pd.read_csv(outDir + 'R_OFIDF.v.DHFDSS_BestSubset_ttest_NPserum.txt', sep=",")
+    ttestDF = pd.read_csv(outDir + 'R_' + outcome + \
+                            '_BestSubset_ttest_NPserum.txt', sep=",")
     ttestDF['mlabel'] = ttestDF['Unnamed: 0']
-    topRFDF = pd.read_csv(outDir + 'R_OFIDF.v.DHFDSS_BestSubset_topRF_NPserum.txt', sep=",")
+    topRFDF = pd.read_csv(outDir + 'R_' + outcome + \
+                            '_BestSubset_topRF_NPserum.txt', sep=",")
     topRFDF['mlabel'] = topRFDF['Unnamed: 0']
+    greedyRFDF = pd.read_csv(outDir + 'R_' + outcome + \
+                            '_BestSubset_greedyRF_NPserum.txt', sep=",")
+    greedyRFDF['mlabel'] = greedyRFDF['Unnamed: 0']
 
     ## To fill in during loop
     alg_pos = []
@@ -124,7 +129,10 @@ def create_LCMS_topJ_barplot(ginfo):
 
     ## Cycle through for number of LCMS vars
     for counter, LCMSvars in enumerate(LCMSvars_list):
-        ytick_labels.append("Clinical + \n"+str(LCMSvars)+" LCMS features")
+        if LCMSvars==1:
+            ytick_labels.append("Clinical + \n"+str(LCMSvars)+" LCMS feature")
+        else:
+            ytick_labels.append("Clinical + \n"+str(LCMSvars)+" LCMS features")
         if LCMSvars==0:
             ytick_positions.append(ymax+1)
         else:
@@ -146,6 +154,9 @@ def create_LCMS_topJ_barplot(ginfo):
                 elif subsetAlg=="topRF": 
                     df = topRFDF
                     colors_list = colors_topRF
+                elif subsetAlg=="greedyRF": 
+                    df = greedyRFDF
+                    colors_list = colors_greedyRF
                 if LCMSvars == 0:
                     colors_list = colors_noLCMS
                     method_labels.append(method)
@@ -165,17 +176,20 @@ def create_LCMS_topJ_barplot(ginfo):
                     align='center', alpha=1, color=colors)
     plt.yticks(ytick_positions, ytick_labels) #size=16
     plt.xlim(.5, 1)
-    plt.ylim(-2, ymax+6) 
+    addtoy = (len(subsetAlg_list)+1)*2
+    plt.ylim(-2, ymax+addtoy) 
     #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
     plt.subplots_adjust(left=.22, right=.9, top=.9, bottom=.1)
     lhandles = []
     for mycolor in colors_legend[::-1]:
         hand = mpatches.Patch(color=mycolor)
         lhandles.append(hand)
-    leg = plt.legend((lhandles), (method_labels[::-1]), ncol=3)
+    mycols = len(subsetAlg_list)+1
+    leg = plt.legend((lhandles), (method_labels[::-1]), ncol=mycols, columnspacing=1)
     #plt.tight_layout()
 
-    plt.savefig(outDir + 'LCMS_subsets_OFIDF.v.DHFDSS.eps', dpi=1200) 
+    plt.savefig(outDir + 'LCMS_subsets_' + outcome + '_' + \
+        subsetAlg_list[0] + '_' + subsetAlg_list[1] + '.eps', dpi=1200) 
     plt.close()  
 
 def create_LCMS_barplot(ginfo, LCMScompare):
@@ -368,7 +382,8 @@ def create_impDum_barplot(ginfo):
     #cycle through each patient list
     plots = []
     for counter, suffix in enumerate(suffix_list):
-        tableName = ginfo.FileNamePrefix + '_' + predictor_desc + '_' + ginfo.patient_sample + suffix + '.txt'
+        tableName = ginfo.FileNamePrefix + '_' + predictor_desc + '_' + \
+            ginfo.patient_sample + suffix + '.txt'
         resultsDF = pd.read_csv(outDir + 'R_' + tableName, sep=",")
         measurements = np.array(resultsDF['cvAUC'])
         z = stats.norm.ppf(.95)
@@ -457,8 +472,8 @@ def create_testData_barplot(ginfo):
 def main():
 
     ## Choose outcome variable 
-    outcome = "is.DEN"  
-    #outcome = "is.DHF_DSS"
+    #outcome = "is.DEN"  
+    outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients 
     NoOFI = False #only applicable for is.DHF_DSS
@@ -475,7 +490,8 @@ def main():
     ginfo = parse_args(patient_sample, outcome, NoOFI, NoInitialDHF)
 
     ## Bart plot which compares methods to choose best subset of LCMS features
-    create_LCMS_topJ_barplot(ginfo)
+    subsetAlg_list = ['greedyRF','topRF', 'ttest'] #choose 2 of: "ttest","topRF","greedyRF"
+    create_LCMS_topJ_barplot(ginfo, outcome, subsetAlg_list)
 
     ## Bar plot with bars grouped by predictor set and colors indicating LCMS run 
     #LCMScompare = "NonInvasives" #"NonInvasives", "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
