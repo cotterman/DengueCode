@@ -573,8 +573,8 @@ def create_testData_barplot(ginfo):
 def main():
 
     ## Choose outcome variable 
-    outcome = "is.DEN"  
-    #outcome = "is.DHF_DSS"
+    #outcome = "is.DEN"  
+    outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients 
     NoOFI = False #only applicable for is.DHF_DSS
@@ -603,7 +603,7 @@ def main():
 
     ## Bar plot with bars grouped by predictor set and colors indicating LCMS run 
     #"MassHuntRP_v_MassHuntNP", "NonInvasives", "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
-    LCMScompare = "NonInvasives"
+    LCMScompare = "NPbins_v_RPbins"
     create_LCMS_barplot(ginfo, LCMScompare, outcome, FileNameSuffix2)   
 
     ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors sets 
