@@ -42,8 +42,8 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
-#outDir = "/users/ccotter/python_out/" #nandi
+#outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
+outDir = "/users/ccotter/python_out/" #nandi
 
 GraphInfo = namedtuple("GraphInfo", 
     ["patient_sample","comparison_groups", "FileNamePrefix", "NoInitialDHF", "NoOFI"])
@@ -203,23 +203,23 @@ def create_LCMS_barplot(ginfo, LCMScompare, outcome, FileNameSuffix2):
         inLCMSData_list = ['NPbins50x50', 'RPbins50x50'] #datafile names
         inLCMSData_desc = ['Normal phase, 50x50 intensity grid',
                        'Reverse phase, 50x50 intensity grid'] #graph labels
-        color_list = ["dark lilac", "salmon"] #xkcd colors
+        color_list = ["taupe", "plum"] #xkcd colors
 
     elif LCMScompare == "NPbins_v_MassHuntNP":
         inLCMSData_list = ['NPbins50x50', 'MassHuntNP']
         inLCMSData_desc = ['Normal phase, 50x50 intensity grid',
                        'Normal phase, Mass Hunter'] 
-        color_list = ["dark lilac", "teal green"] 
+        color_list = ["taupe", "dark teal"] 
 
     elif LCMScompare == "NonInvasives":
         inLCMSData_list = ['SalivaMH','UrineMH']
         inLCMSData_desc = ['Saliva','Urine'] 
-        color_list = ["medium blue","light burgundy"]
+        color_list = ["sky blue","marine blue"]
 
     elif LCMScompare == "MassHunt _RPvNP":
         inLCMSData_list = ['MassHuntRP_noFill','MassHuntNP']
         inLCMSData_desc = ['Normal phase, Mass Hunter','Reverse phase, Mass Hunter'] 
-        color_list = ["plum","teal green"]
+        color_list = ["plum","teal"]
 
     elif LCMScompare == "RP_noFillvFill":
         #eventually may instead want MassHuntRP_fill vs. MassHuntRP_isotope
@@ -275,7 +275,7 @@ def create_LCMS_barplot(ginfo, LCMScompare, outcome, FileNameSuffix2):
 
                 #text section headings
                 if a==len(alg_list)-1 and d==len(inLCMSData_list)-1:
-                    plt.text(.52, ymax+1, predcat_names[p]) 
+                    plt.text(.52, ymax+1, predcat_names[p], weight='bold') 
                 
                 #append to running list of values
                 myrow = df.loc[df['Unnamed: 0']==alg]
@@ -416,7 +416,7 @@ def create_dataCorrect_barplot(ginfo, inLCMSData):
     initial_pos = np.arange(len(alg_names))*(
         len(suffix_list)+1)+len(suffix_list)+1
     bar_width = 1
-    colors = ["salmon","khaki","teal"]
+    colors = ["taupe","teal","salmon"]
     mycolors = sns.xkcd_palette(colors)
     plt.figure(figsize=(6.7,8)) #to place next to one another
     #cycle through each patient list
