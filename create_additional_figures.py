@@ -42,8 +42,8 @@ from cross_val_utils import cross_val_predict_proba
 
 np.random.seed(100)
 
-#outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
-outDir = "/users/ccotter/python_out/" #nandi
+outDir = "/home/ccotter/dengue_data_and_results_local/python_out/" #home PC
+#outDir = "/users/ccotter/python_out/" #nandi
 
 GraphInfo = namedtuple("GraphInfo", 
     ["patient_sample","comparison_groups", "FileNamePrefix", "NoInitialDHF", "NoOFI"])
@@ -191,7 +191,8 @@ def create_LCMS_topJ_barplot(ginfo, outcome, subsetAlg_list, inLCMSData, FileNam
     plt.savefig(outDir + inLCMSData + '_subsets_' + outcome + FileNameSuffix2 + '.eps', dpi=1200) 
     plt.close()  
 
-def create_LCMS_barplot(ginfo, LCMScompare):
+
+def create_LCMS_barplot(ginfo, LCMScompare, outcome, FileNameSuffix2):
     """Bar plot with bars grouped by predictor set and colors indicating LCMS run  
 
         LCMScompare = "NPbins_v_RPbins" to compare NP vs. RP using binned data
@@ -199,113 +200,124 @@ def create_LCMS_barplot(ginfo, LCMScompare):
     """
 
     if LCMScompare == "NPbins_v_RPbins":
-        # LCMS data to loop through
-        inLCMSData_list = ['NPbins50x50', 'RPbins50x50']
-        # labels to appear in graph legend
+        inLCMSData_list = ['NPbins50x50', 'RPbins50x50'] #datafile names
         inLCMSData_desc = ['Normal phase, 50x50 intensity grid',
-                       'Reverse phase, 50x50 intensity grid'] 
-        #xkcd colors
-        colors = ["light burgundy", "medium blue"] 
+                       'Reverse phase, 50x50 intensity grid'] #graph labels
+        color_list = ["dark lilac", "salmon"] #xkcd colors
 
     elif LCMScompare == "NPbins_v_MassHuntNP":
-        # LCMS data to loop through
         inLCMSData_list = ['NPbins50x50', 'MassHuntNP']
-        # labels to appear in graph legend
         inLCMSData_desc = ['Normal phase, 50x50 intensity grid',
                        'Normal phase, Mass Hunter'] 
-        #xkcd colors
-        colors = ["light burgundy", "tangerine"] 
+        color_list = ["dark lilac", "teal green"] 
 
     elif LCMScompare == "NonInvasives":
-        # LCMS data to loop through
         inLCMSData_list = ['SalivaMH','UrineMH']
-        # labels to appear in graph legend
         inLCMSData_desc = ['Saliva','Urine'] 
-        #xkcd colors
-        colors = ["dark lilac","teal green"]
+        color_list = ["medium blue","light burgundy"]
 
-    elif LCMScompare == "MassHunt _NPvRP":
-        # LCMS data to loop through
+    elif LCMScompare == "MassHunt _RPvNP":
         inLCMSData_list = ['MassHuntRP_noFill','MassHuntNP']
-        # labels to appear in graph legend
         inLCMSData_desc = ['Normal phase, Mass Hunter','Reverse phase, Mass Hunter'] 
-        #xkcd colors
-        colors = ["plum","tangerine"]
+        color_list = ["plum","teal green"]
 
     elif LCMScompare == "RP_noFillvFill":
         #eventually may instead want MassHuntRP_fill vs. MassHuntRP_isotope
         inLCMSData_list = ['MassHuntRP_noFill','MassHuntRP_fill']
         inLCMSData_desc = ['RP Mass Hunter - no Fill','RP Mass Hunter - with Fill'] 
-        colors = ["plum","mauve"] #'sea blue'
+        color_list = ["plum","mauve"] #'sea blue'
 
-    figName = ginfo.FileNamePrefix + '_' + LCMScompare
     #first name listed will appear closest to bottom of y-axis
     predcat_names = ['Clinical+LCMS','LCMS only','Clinical only'] 
-    predictor_desc = "covarlist_all"
-    #will appear in alphabetical order
-    alg_list = ['Gradient Boost','AdaBoost','Random Forests', 'Super Learner'] #
-    initial_pos = np.arange(len(predcat_names)*len(alg_list))*(
-        len(inLCMSData_list)+1)+len(inLCMSData_list)+1
-    #initial_pos = np.arange(len(predcat_names)*len(alg_list)+len(predcat_names))*(
-    #    len(inLCMSData_list)+1)+len(inLCMSData_list)+1
-    bar_width = 1
-    mycolors = sns.xkcd_palette(colors)
-    plt.figure(figsize=(6.7,8))
-    #cycle through each inLCMSData value
-    plots = []
-    for counter, inLCMSData in enumerate(inLCMSData_list):
-        resultsDF = pd.DataFrame()
-        for myc, predcat in enumerate(predcat_names):            
-            if predcat=='Clinical only':
-                tableName = ginfo.FileNamePrefix + '_' + predictor_desc + '_'+inLCMSData+'patients'
+    alg_list = ['Super Learner','Gradient Boost','AdaBoost','Random Forests']
+
+    figName = ginfo.FileNamePrefix + '_' + LCMScompare 
+    plt.figure(figsize=(6.7,8)) 
+
+    ## Prepare data to be graphed   
+    df_list = []
+    for inLCMSData in inLCMSData_list:
+        for predcat in predcat_names:
+            if predcat=='Clinical+LCMS':
+                resultsDF = pd.read_csv(outDir + 'R_' + ginfo.FileNamePrefix + \
+                    "_covarlist_all_" + inLCMSData + FileNameSuffix2 + '.txt', sep=",")
+            elif predcat=='Clinical only':
+                resultsDF = pd.read_csv(outDir + 'R_' + ginfo.FileNamePrefix + \
+                     "_covarlist_all_" + inLCMSData + 'patients' + FileNameSuffix2 + '.txt', sep=",")
             elif predcat=='LCMS only':
-                tableName = ginfo.FileNamePrefix + '_covarlist_' + inLCMSData
-            elif predcat=='Clinical+LCMS':
-                tableName = ginfo.FileNamePrefix + '_' + predictor_desc + '_' + inLCMSData
-            rDF = pd.read_csv(outDir + 'R_' + tableName + '.txt', sep=",")
-            #sort by alg_list so numbers match with labels
-            rDF.sort(columns=['Unnamed: 0'], axis=0, ascending=False, inplace=True)
-            prelim = rDF[rDF['Unnamed: 0'].isin(alg_list)]
-            resultsDF = pd.concat([resultsDF,prelim],axis=0)
-        alg_list.sort(reverse=True) #to match with numbers
-        measurements = np.array(resultsDF['cvAUC'])
-        xpositions = np.array(resultsDF['ci_low'])
-        z = stats.norm.ppf(.95)
-        SEs = [( np.array(resultsDF['cvAUC']) - np.array(resultsDF['ci_low']) )/z, 
-               ( np.array(resultsDF['ci_up']) - np.array(resultsDF['cvAUC']) )/z ]
-        ypositions = initial_pos - counter 
-        print "tablename: " , tableName 
-        print "resultsDF: " , resultsDF
-        print "measurements: " , measurements
-        print "ypos: " , ypositions
-        plot = plt.barh(bottom=ypositions, width=measurements, height=bar_width,
-                        xerr=SEs, error_kw=dict(ecolor='.1', lw=1, capsize=1, capthick=1),
-                        align='center', alpha=1, 
-                        color=mycolors[counter], label=inLCMSData_desc[counter])
-        #add numeric values to plot
-        xpos = np.array(resultsDF['ci_low']) -.05
-        ypos = ypositions - .3
-        mytext = ["%.2f" % x for x in measurements]    
-        for place, text in enumerate(mytext):
-            plt.text(xpos[place], ypos[place], text, color="white", fontsize=12)
-        plots.append(plot)
+                resultsDF = pd.read_csv(outDir + 'R_' + ginfo.FileNamePrefix + \
+                     "_covarlist_" + inLCMSData + FileNameSuffix2 + '.txt', sep=",")
+            df_list.append(resultsDF)
 
-    #add labels for algorithms
-    plt.yticks(initial_pos - counter/2 - .5, alg_list*len(predcat_names))
+    ## To fill in during loop
+    positions = []
+    measurements = []
+    colors = []
+    method_labels = []
+    colors_legend = []
+    ytick_labels = []
+    ytick_positions = []
+    SEs = []
+    ymax = 0
+    bar_width = 1
+    mycolor_list = sns.xkcd_palette(color_list)
 
-    #add labels for predictors used (LCMS vs clinical vs combo)
-    print "len(predcat_names): " , len(predcat_names)
-    stepsize = len(predcat_names)*len(alg_list)
-    for myc, pred_name in enumerate(predcat_names):
-        ypos = stepsize*(myc+1) + .6
-        plt.text(.5, ypos, pred_name, color="black", fontsize=14)
+    #loop thru predcat_names ("clinical only", "lcms only" etc.)
+    for p, predcat in enumerate(predcat_names):
 
-    plt.xlabel = "cvAUC"
+        #cycle through algorithm list ('adaboost', 'RF', etc.)
+        for a, alg in enumerate(alg_list):
+
+            #cycle LCMS methods ('urine','RP','NP','masshunt' etc.)
+            for d, dataType in enumerate(inLCMSData_list):
+                
+                df = df_list[d*len(predcat_names) + p]
+
+                #text section headings
+                if a==len(alg_list)-1 and d==len(inLCMSData_list)-1:
+                    plt.text(.52, ymax+1, predcat_names[p]) 
+                
+                #append to running list of values
+                myrow = df.loc[df['Unnamed: 0']==alg]
+                measurement = float(myrow['cvAUC'])
+                measurements.append(measurement)
+                z = stats.norm.ppf(.95)
+                SE = float(myrow['se'])
+                #SE = [( float(myrow['cvAUC']) - float(myrow['ci_low']) )/z, 
+                #        ( float(myrow['ci_up']) - float(myrow['cvAUC']) )/z ]
+                SEs.append(SE)
+                positions.append(ymax)
+                colors.append(mycolor_list[d])
+                #add numeric values to plot
+                xpos = float(myrow['ci_low']) -.05
+                ypos = ymax - .3
+                mytext = "%.2f" % measurement
+                plt.text(xpos, ypos, mytext, color="white", fontsize=10)
+                if d==0:
+                    ytick_labels.append(alg)
+                    ytick_positions.append(ymax+.5)
+                ymax += bar_width
+
+        #add space between groups of bars segmented by predcat values
+        ymax += bar_width*3
+
+    print np.array(SEs)
+    plt.barh(bottom=positions, width=measurements, height=bar_width,
+                    xerr=np.array(SEs), error_kw=dict(ecolor='.1', lw=1, capsize=1, capthick=1),
+                    align='center', alpha=1, color=colors)
+    plt.yticks(ytick_positions, ytick_labels) #size=16
     plt.xlim(.5, 1)
-    plt.ylim(0,max(initial_pos)+4)
-    print "counter: " , counter
-    plt.legend(ncol=1)
+    plt.ylim(-2, ymax) 
+
+    #make left spacing large enough for labels.  Default is  .1, .9, .9, .1
+    plt.subplots_adjust(left=.22, right=.9, top=.9, bottom=.1)
+    lhandles = []
+    for mycolor in mycolor_list[::-1]:
+        hand = mpatches.Patch(color=mycolor)
+        lhandles.append(hand)
+    leg = plt.legend((lhandles), (inLCMSData_desc[::-1]))
     plt.tight_layout()
+    plt.legend()
     plt.savefig(outDir + figName + '.eps', dpi=1200)
     plt.close() 
 
@@ -561,8 +573,8 @@ def create_testData_barplot(ginfo):
 def main():
 
     ## Choose outcome variable 
-    #outcome = "is.DEN"  
-    outcome = "is.DHF_DSS"
+    outcome = "is.DEN"  
+    #outcome = "is.DHF_DSS"
 
     ## Choose whether to exclude OFI patients 
     NoOFI = False #only applicable for is.DHF_DSS
@@ -581,17 +593,18 @@ def main():
     ginfo = parse_args(patient_sample, outcome, NoOFI, NoInitialDHF)
 
     ## Examine affect of altering Dx label for LCMS prediction
-    create_dataCorrect_barplot(ginfo, inLCMSData)
+    #create_dataCorrect_barplot(ginfo, inLCMSData)
 
     ## Bart plot which compares methods to choose best subset of LCMS features
     #subsetAlg_list = ['greedyRF','topRF', 'ttest'] #choises: "ttest","topRF","greedyRF"
-    #FileNameSuffix2 = "" # '_C1', '_C2' will be based on C1, C2 data corrections. 
+    FileNameSuffix2 = "" # '_C1', '_C2' will be based on C1, C2 data corrections. 
         #FileNameSuffix2 = '' means no correction 
     #create_LCMS_topJ_barplot(ginfo, outcome, subsetAlg_list, inLCMSData, FileNameSuffix2)
 
     ## Bar plot with bars grouped by predictor set and colors indicating LCMS run 
-    #LCMScompare = "MassHuntRP_v_MassHuntNP" #"NonInvasives", "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
-    #create_LCMS_barplot(ginfo, LCMScompare)   
+    #"MassHuntRP_v_MassHuntNP", "NonInvasives", "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
+    LCMScompare = "NonInvasives"
+    create_LCMS_barplot(ginfo, LCMScompare, outcome, FileNameSuffix2)   
 
     ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors sets 
     #create_predSets_barplot(ginfo)
