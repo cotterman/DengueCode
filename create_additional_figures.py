@@ -603,7 +603,7 @@ def main():
 
     ## Bar plot with bars grouped by predictor set and colors indicating LCMS run 
     #"MassHuntRP_v_MassHuntNP", "NonInvasives", "NPbins_v_MassHuntNP", "NPbins_v_RPbins"
-    LCMScompare = "NPbins_v_RPbins"
+    LCMScompare = "NPbins_v_MassHuntNP"
     create_LCMS_barplot(ginfo, LCMScompare, outcome, FileNameSuffix2)   
 
     ## Bar plot with bars ordered/grouped by algorithm and colors indicating predictors sets 
